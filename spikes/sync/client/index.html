@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Спайк синхронизации</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #fafafa; --fg: #1a1a1a; --muted: #666; --card: #fff; --line: #ddd; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #121212; --fg: #eee; --muted: #999; --card: #1d1d1d; --line: #333; } }
+    body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+    main { max-width: 980px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+    video { width: 100%; background: #000; border-radius: 8px; display: block; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+    button[disabled] { opacity: .5; cursor: default; }
+    input[type=range] { flex: 1; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0; }
+    dt { color: var(--muted); }
+    dd { margin: 0; font-variant-numeric: tabular-nums; }
+    ul { margin: 6px 0 0; padding-left: 18px; }
+    #log { font-size: 12px; color: var(--muted); max-height: 160px; overflow: auto; }
+    .controls { display: none; }
+    body.joined .controls { display: flex; }
+    #blocked { position: fixed; inset: auto 16px 16px; padding: 12px; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <video id="video" preload="auto" playsinline></video>
+      <div class="row">
+        <input id="name" placeholder="Ваше имя" maxlength="32" value="">
+        <button id="join">Присоединиться</button>
+        <label>или свой файл: <input id="file" type="file" accept="video/*"></label>
+      </div>
+      <div class="row controls">
+        <button id="play">▶ Играть</button>
+        <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Перемотка">
+      </div>
+      <p id="st-wait"></p>
+    </section>
+    <aside class="card">
+      <h1>Состояние синхронизации</h1>
+      <dl>
+        <dt>Соединение</dt><dd id="st-conn">—</dd>
+        <dt>Часы сервера</dt><dd id="st-offset">—</dd>
+        <dt>Мост воркер↔окно</dt><dd id="st-bridge">—</dd>
+        <dt>Комната</dt><dd id="st-room">—</dd>
+        <dt>Ошибка</dt><dd id="st-err">—</dd>
+        <dt>Скорость</dt><dd id="st-rate">—</dd>
+        <dt>Режим</dt><dd id="st-mode">—</dd>
+        <dt>Перемотки</dt><dd id="st-seeks">—</dd>
+      </dl>
+      <h1 style="margin-top:12px">Участники</h1>
+      <ul id="peers"></ul>
+      <h1 style="margin-top:12px">Журнал</h1>
+      <ul id="log"></ul>
+    </aside>
+  </main>
+  <button id="blocked" hidden>Браузер заблокировал звук — нажмите, чтобы продолжить</button>
+  <script type="module" src="/client/main.ts"></script>
+</body>
+</html>

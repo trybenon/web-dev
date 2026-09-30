@@ -1,0 +1,28 @@
+{
+  "name": "sync-spike",
+  "private": true,
+  "type": "module",
+  "description": "Спайк: синхронизация воспроизведения в нескольких вкладках (задачи #3, #4)",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node server/main.ts",
+    "video": "bash tools/make-test-video.sh",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "measure": "node tools/measure.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.0",
+    "@vitest/coverage-v8": "^5.0.2",
+    "playwright-core": "^1.63.0",
+    "typescript": "~6.0.2",
+    "vitest": "^5.0.2"
+  }
+}
