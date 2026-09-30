@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Спайк #25 — отпечаток видеофайла</title>
+  </head>
+  <body>
+    <h1>Отпечаток видеофайла — спайк #25</h1>
+    <p>Выберите локальный видеофайл. Читаются только три фрагмента по 1 МиБ; файл никуда не отправляется.</p>
+    <label>Видео: <input id="file" type="file" accept="video/*,.mp4,.mkv,.webm" /></label>
+    <p id="status" role="status" aria-live="polite" class="hint">Ожидаю файл.</p>
+    <section id="results" hidden>
+      <h2>Результат</h2>
+      <p id="file-info"></p>
+      <table>
+        <tbody id="timings"></tbody>
+      </table>
+      <p>JSON для сравнения двух запусков:</p>
+      <pre id="fingerprint"></pre>
+    </section>
+    <script type="module" src="./main.mjs"></script>
+  </body>
+</html>
