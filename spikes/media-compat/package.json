@@ -1,0 +1,26 @@
+{
+  "name": "media-compat-spike",
+  "private": true,
+  "type": "module",
+  "description": "Спайк: звук MKV (AC-3/E-AC-3/DTS) в браузере — проверка файла и конвертация звука в браузере",
+  "scripts": {
+    "build": "esbuild src/app.ts --bundle --format=esm --target=es2022 --outfile=public/app.js && esbuild src/writer.worker.ts --bundle --format=iife --target=es2022 --outfile=public/writer.worker.js",
+    "start": "node tools/serve.mjs",
+    "samples": "bash tools/make-samples.sh",
+    "test": "node --test tests/verdict.test.ts",
+    "bench": "node tools/bench.mjs"
+  },
+  "dependencies": {
+    "@mediabunny/aac-encoder": "^1.61.3",
+    "@mediabunny/ac3": "^1.61.3",
+    "@mediabunny/dts": "^1.61.3",
+    "mediabunny": "^1.61.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0"
+  }
+}

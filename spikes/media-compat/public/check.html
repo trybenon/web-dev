@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка кодеков</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 980px; }
+  h2 { margin-top: 28px; }
+  video { width: 100%; max-width: 640px; background: #000; margin: 8px 0; display: block; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; font-weight: 600; }
+  .yes { color: #0a7a2f; font-weight: 600; }
+  .maybe { color: #8a6d00; font-weight: 600; }
+  .no { color: #b00020; font-weight: 600; }
+  .muted { color: #666; }
+  pre { background: #f4f4f4; padding: 8px; white-space: pre-wrap; max-height: 320px; overflow: auto; }
+  button { font: inherit; padding: 6px 12px; }
+</style>
+</head>
+<body>
+<h1>Проверка кодеков</h1>
+<p class="muted">Файлы никуда не отправляются. Порядок: посмотри раздел 1, потом в разделе 2 открой по очереди все ролики (01–13)
+(каждый — ▶ и подождать 4 секунды), потом нажми «Скопировать отчёт» внизу и пришли текст.</p>
+
+<h2>1. Что браузер обещает заранее</h2>
+<p class="muted">
+<b>canPlayType</b> — «смогу ли сыграть такой файл» (да / может быть / нет).
+<b>MSE</b> — <code>MediaSource.isTypeSupported</code>, нужен для потоковой подачи (будущий P2P).
+<b>MediaCapabilities</b> — новый способ спросить о декодировании.
+<b>WebCodecs</b> — есть ли декодер, которым можно пользоваться из кода напрямую.
+</p>
+<table id="promise"><thead><tr>
+  <th>Кодек</th><th>canPlayType в MKV</th><th>canPlayType в MP4</th><th>canPlayType в WebM</th><th>MSE (MP4)</th><th>MediaCapabilities (MP4)</th><th>WebCodecs</th>
+</tr></thead><tbody></tbody></table>
+<table id="containers"><thead><tr><th>Контейнер</th><th>canPlayType без кодеков</th></tr></thead><tbody></tbody></table>
+
+<h2>2. Что происходит на самом деле</h2>
+<input type="file" id="file" accept="video/*,.mkv">
+<video id="v" controls playsinline></video>
+<table id="now"></table>
+
+<h2>3. Сводка по открытым файлам</h2>
+<p class="muted">Две колонки «совпало»: если браузер спросить про контейнер файла (MKV) и если спросить только про кодеки, подставив MP4.
+Нам нужно понять, каким вопросом можно заранее, без проигрывания, узнать, будет ли звук.</p>
+<table id="summary"><thead><tr>
+  <th>Файл</th><th>Факт</th><th>Совпало (спросили про MKV)</th><th>Совпало (спросили про кодеки)</th>
+</tr></thead><tbody></tbody></table>
+
+<p><button id="copy">Скопировать отчёт</button></p>
+<pre id="out" hidden></pre>
+
+<script>
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+// ─── Кодеки и тестовые файлы ───────────────────────────────────────
+const CODECS = [
+  { name: 'H.264 (видео)', kind: 'video', c: 'avc1.640028' },
+  { name: 'HEVC / H.265 (видео)', kind: 'video', c: 'hvc1.1.6.L120.90' },
+  { name: 'VP9 (видео)', kind: 'video', c: 'vp09.00.40.08' },
+  { name: 'AV1 (видео)', kind: 'video', c: 'av01.0.08M.08' },
+  { name: 'AAC', kind: 'audio', c: 'mp4a.40.2', wc: 'mp4a.40.2', ch: 2 },
+  { name: 'MP3', kind: 'audio', c: 'mp4a.6B', wc: 'mp3', ch: 2 },
+  { name: 'Opus', kind: 'audio', c: 'opus', wc: 'opus', ch: 2 },
+  { name: 'Vorbis', kind: 'audio', c: 'vorbis', wc: 'vorbis', ch: 2 },
+  { name: 'FLAC', kind: 'audio', c: 'flac', wc: 'flac', ch: 2 },
+  { name: 'AC-3', kind: 'audio', c: 'ac-3', wc: 'ac-3', ch: 6 },
+  { name: 'E-AC-3', kind: 'audio', c: 'ec-3', wc: 'ec-3', ch: 6 },
+  { name: 'DTS', kind: 'audio', c: 'dtsc', wc: null, ch: 6 },
+  { name: 'TrueHD', kind: 'audio', c: 'mlpa', wc: null, ch: 6 },
+];
+const byCode = Object.fromEntries(CODECS.map((x) => [x.c, x]));
+
+// Что лежит внутри наших тестовых роликов.
+const TEST_FILES = {
+  '01': { box: 'mkv', video: 'avc1.640028', audio: ['mp4a.40.2'] },
+  '02': { box: 'mkv', video: 'avc1.640028', audio: ['ac-3'] },
+  '03': { box: 'mkv', video: 'avc1.640028', audio: ['ec-3'] },
+  '04': { box: 'mkv', video: 'avc1.640028', audio: ['dtsc'] },
+  '05': { box: 'mkv', video: 'avc1.640028', audio: ['ac-3', 'mp4a.40.2'] },
+  '06': { box: 'mkv', video: 'avc1.640028', audio: ['flac'] },
+  '07': { box: 'mkv', video: 'hvc1.1.6.L120.90', audio: ['mp4a.40.2'] },
+  '08': { box: 'mp4', video: 'avc1.640028', audio: ['mp4a.40.2'] },
+  '09': { box: 'mp4', video: 'avc1.640028', audio: ['ac-3'] },
+  '10': { box: 'mp4', video: 'avc1.640028', audio: ['ec-3'] },
+  '11': { box: 'mp4', video: 'avc1.640028', audio: ['flac'] },
+  '12': { box: 'mp4', video: 'avc1.640028', audio: ['opus'] },
+  '13': { box: 'mp4', video: 'avc1.640028', audio: ['ac-3', 'mp4a.40.2'] },
+};
+const MIME = { mkv: 'video/x-matroska', mp4: 'video/mp4', webm: 'video/webm' };
+
+const probe = document.createElement('video');
+const cpt = (type) => probe.canPlayType(type); // '' | 'maybe' | 'probably'
+const word = (r) => (r === 'probably' ? 'да' : r === 'maybe' ? 'может быть' : r === true ? 'да' : r === false ? 'нет' : r === '' ? 'нет' : String(r));
+const cls = (w) => (w === 'да' ? 'yes' : w === 'может быть' ? 'maybe' : w === 'нет' ? 'no' : 'muted');
+const cell = (w) => `<td class="${cls(w)}">${w}</td>`;
+
+// ─── 1. Обещания браузера ──────────────────────────────────────────
+const promise = {};
+
+async function mediaCaps(x) {
+  if (!navigator.mediaCapabilities) return 'нет API';
+  const type = `${x.kind}/mp4; codecs="${x.c}"`;
+  const cfg = x.kind === 'video'
+    ? { type: 'file', video: { contentType: type, width: 1920, height: 1080, bitrate: 5_000_000, framerate: 24 } }
+    : { type: 'file', audio: { contentType: type, channels: String(x.ch), bitrate: 448_000, samplerate: 48_000 } };
+  try {
+    const r = await navigator.mediaCapabilities.decodingInfo(cfg);
+    return r.supported ? 'да' : 'нет';
+  } catch (e) {
+    return 'ошибка: ' + e.name;
+  }
+}
+
+async function webCodecs(x) {
+  const Dec = x.kind === 'video' ? window.VideoDecoder : window.AudioDecoder;
+  if (!Dec) return 'нет API';
+  const codec = x.kind === 'video' ? x.c : x.wc;
+  if (!codec) return 'не в реестре';
+  try {
+    const cfg = x.kind === 'video' ? { codec } : { codec, sampleRate: 48_000, numberOfChannels: x.ch };
+    const r = await Dec.isConfigSupported(cfg);
+    return r.supported ? 'да' : 'нет';
+  } catch (e) {
+    // FLAC и Vorbis требуют заголовок дорожки (description); без него запрос невалиден.
+    return e.name === 'TypeError' ? 'нужен заголовок дорожки' : 'ошибка: ' + e.name;
+  }
+}
+
+async function fillPromise() {
+  const body = document.querySelector('#promise tbody');
+  for (const x of CODECS) {
+    const row = {
+      mkv: word(cpt(`${MIME.mkv}; codecs="${x.c}"`)),
+      mp4: word(cpt(`${MIME.mp4}; codecs="${x.c}"`)),
+      webm: word(cpt(`${MIME.webm}; codecs="${x.c}"`)),
+      mse: window.MediaSource ? word(MediaSource.isTypeSupported(`${x.kind}/mp4; codecs="${x.c}"`)) : 'нет API',
+      caps: await mediaCaps(x),
+      wc: await webCodecs(x),
+    };
+    promise[x.c] = row;
+    body.insertAdjacentHTML('beforeend',
+      `<tr><td>${x.name} <span class="muted">${x.c}</span></td>${cell(row.mkv)}${cell(row.mp4)}${cell(row.webm)}${cell(row.mse)}${cell(row.caps)}${cell(row.wc)}</tr>`);
+  }
+  const cbody = document.querySelector('#containers tbody');
+  for (const t of ['video/x-matroska', 'video/mkv', 'video/webm', 'video/mp4', 'video/quicktime']) {
+    const w = word(cpt(t));
+    promise['box:' + t] = w;
+    cbody.insertAdjacentHTML('beforeend', `<tr><td>${t}</td>${cell(w)}</tr>`);
+  }
+}
+fillPromise();
+
+// ─── 2. Факт ───────────────────────────────────────────────────────
+const v = document.getElementById('v');
+let current = null; // { name, type, known, playedMs }
+let lastTick = 0;
+const results = {};
+
+document.getElementById('file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const id = (f.name.match(/^(\d\d)-/) || [])[1];
+  current = { name: f.name, type: f.type || '(пусто)', known: TEST_FILES[id] || null, playedMs: 0 };
+  v.src = URL.createObjectURL(f);
+});
+
+function fact() {
+  if (!current) return null;
+  if (v.error) return { ok: false, text: 'файл не открылся', err: `код ${v.error.code}: ${v.error.message || 'без описания'}` };
+  if (current.playedMs < 3000) return null;
+  const picture = v.videoWidth > 0;
+  const a = v.webkitAudioDecodedByteCount;
+  let sound;
+  if (a !== undefined) sound = a > 0;
+  else if (v.mozHasAudio !== undefined) sound = v.mozHasAudio;
+  else sound = null;
+  const text = `${picture ? 'картинка' : 'нет картинки'}, ${sound === null ? 'звук — проверь на слух' : sound ? 'звук есть' : 'звука нет'}`;
+  return { ok: picture && sound !== false, picture, sound, text, err: 'нет' };
+}
+
+// Что браузер обещал для этого файла. Два способа спросить:
+//  box  — честно, с контейнером файла (для MKV: video/x-matroska; codecs="...");
+//  mp4  — только про кодеки, подставив контейнер MP4 (если браузер не признаётся, что знает MKV).
+function promised(known) {
+  if (!known) return null;
+  const ask = (box) => {
+    const whole = word(cpt(`${MIME[box]}; codecs="${[known.video, ...known.audio].join(', ')}"`));
+    const video = word(cpt(`${MIME[box]}; codecs="${known.video}"`));
+    const audio = known.audio.map((c) => ({ c, w: word(cpt(`${MIME[box]}; codecs="${c}"`)) }));
+    return {
+      text: `целиком ${whole}; видео ${video}; ` + audio.map((a) => `${byCode[a.c].name} ${a.w}`).join(', '),
+      open: video !== 'нет',
+      sound: audio.some((a) => a.w !== 'нет'),
+    };
+  };
+  return { box: ask(known.box), mp4: ask('mp4') };
+}
+
+function compare(opened, sound, pr) {
+  if (!opened) return pr.open ? 'нет: обещал, но не открыл' : 'да';
+  if (!pr.open) return 'нет: сказал «не смогу», но открыл';
+  if (sound === null) return 'проверь на слух';
+  if (sound === pr.sound) return 'да';
+  return sound ? 'нет: не обещал звук, но звук есть' : 'нет: обещал звук, но звука нет';
+}
+
+function renderNow() {
+  const t = performance.now();
+  if (current && !v.paused && !v.ended && lastTick) current.playedMs += t - lastTick;
+  lastTick = t;
+  const f = fact();
+  const p = current ? promised(current.known) : null;
+  const rows = [
+    ['Файл', current ? esc(current.name) : '—'],
+    ['Тип файла по мнению системы (file.type)', current ? esc(current.type) : '—'],
+    ['Сыграно, с', current ? (current.playedMs / 1000).toFixed(1) : '—'],
+    ['Итог', f ? `<span class="${f.ok ? 'yes' : 'no'}">${f.text}</span>` : 'нажми ▶ и подожди 3 секунды'],
+    ['Ошибка плеера', v.error ? `код ${v.error.code}: ${v.error.message || ''}` : 'нет'],
+    ['Кадр', `${v.videoWidth}×${v.videoHeight}`],
+    ['Звук декодирован, байт (Chrome; Safari 18 не сообщает)', v.webkitAudioDecodedByteCount ?? '—'],
+    ['mozHasAudio (Firefox)', v.mozHasAudio ?? '—'],
+    ['audioTracks', v.audioTracks ? `${v.audioTracks.length}: ${Array.from(v.audioTracks).map((x) => esc(x.label || x.language || '?') + (x.enabled ? ' (вкл.)' : '')).join(', ')}` : 'браузер не даёт'],
+    ['Браузер обещал (с контейнером файла)', p ? p.box.text : 'неизвестный файл — сравнение только для 01…13'],
+    ['Браузер обещал (кодеки, как в MP4)', p ? p.mp4.text : '—'],
+  ];
+  document.getElementById('now').innerHTML = rows.map(([k, x]) => `<tr><td>${k}</td><td>${x}</td></tr>`).join('');
+
+  if (current && f) {
+    const opened = !v.error;
+    results[current.name] = {
+      promisedBox: p ? p.box.text : '—',
+      promisedMp4: p ? p.mp4.text : '—',
+      fact: f.text + (f.err !== 'нет' ? ` (${f.err})` : ''),
+      matchBox: p ? compare(opened, f.sound, p.box) : '—',
+      matchMp4: p ? compare(opened, f.sound, p.mp4) : '—',
+    };
+    const c = (m) => `<td class="${m.startsWith('да') ? 'yes' : m.startsWith('нет') ? 'no' : 'muted'}">${m}</td>`;
+    document.querySelector('#summary tbody').innerHTML = Object.entries(results)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([n, r]) => `<tr><td>${esc(n)}</td><td>${r.fact}</td>${c(r.matchBox)}${c(r.matchMp4)}</tr>`)
+      .join('');
+  }
+}
+setInterval(renderNow, 250);
+
+// ─── Отчёт ─────────────────────────────────────────────────────────
+document.getElementById('copy').addEventListener('click', () => {
+  const lines = [`Браузер: ${navigator.userAgent}`, '', 'ОБЕЩАНИЯ (canPlayType MKV | MP4 | WebM | MSE | MediaCapabilities | WebCodecs):'];
+  for (const x of CODECS) {
+    const r = promise[x.c];
+    if (r) lines.push(`${x.name}: ${r.mkv} | ${r.mp4} | ${r.webm} | ${r.mse} | ${r.caps} | ${r.wc}`);
+  }
+  lines.push('', 'КОНТЕЙНЕРЫ:');
+  for (const t of ['video/x-matroska', 'video/mkv', 'video/webm', 'video/mp4', 'video/quicktime']) lines.push(`${t}: ${promise['box:' + t]}`);
+  lines.push('', 'ФАЙЛЫ:');
+  for (const [n, r] of Object.entries(results).sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(
+      `${n}`,
+      `  факт: ${r.fact}`,
+      `  обещал (MKV): ${r.promisedBox} → совпало: ${r.matchBox}`,
+      `  обещал (кодеки в MP4): ${r.promisedMp4} → совпало: ${r.matchMp4}`,
+    );
+  }
+  const text = lines.join('\n');
+  const out = document.getElementById('out');
+  out.textContent = text;
+  out.hidden = false;
+  navigator.clipboard?.writeText(text).catch(() => {});
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+{
+  "date": "2026-10-06T19:53:48.474Z",
+  "chromium": "141.0.7390.37",
+  "env": {
+    "browser": "chrome",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
+    "webCodecsAudio": true,
+    "nativeAacEncoder": false,
+    "opfs": true,
+    "savePicker": true,
+    "quotaFreeMb": 154812
+  },
+  "results": [
+    {
+      "file": "samples/vp9-ac3-5.1.mkv",
+      "codec": "opus",
+      "sizeMb": 2,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-ac3-5.1.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 518,
+      "bytesIn": 2607719,
+      "bytesOut": 1815055,
+      "durationSec": 20,
+      "speedX": 38.6,
+      "mbPerSec": 4.8,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.02,
+      "sound": "есть"
+    },
+    {
+      "file": "samples/vp9-eac3-5.1.mkv",
+      "codec": "opus",
+      "sizeMb": 2,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-eac3-5.1.fixed.mp4",
+      "plan": "Звук E-AC-3 (Dolby Digital Plus) перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 397,
+      "bytesIn": 2446110,
+      "bytesOut": 1813411,
+      "durationSec": 20,
+      "speedX": 50.3,
+      "mbPerSec": 5.9,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.02,
+      "sound": "есть"
+    },
+    {
+      "file": "samples/vp9-dts-5.1.mkv",
+      "codec": "opus",
+      "sizeMb": 3,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-dts-5.1.fixed.mp4",
+      "plan": "Звук DTS перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 790,
+      "bytesIn": 3411003,
+      "bytesOut": 1693155,
+      "durationSec": 20,
+      "speedX": 25.3,
+      "mbPerSec": 4.1,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.02,
+      "sound": "есть"
+    },
+    {
+      "file": "samples/vp9-ac3+aac.mkv",
+      "codec": "opus",
+      "sizeMb": 3,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-ac3+aac.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 374,
+      "bytesIn": 2678419,
+      "bytesOut": 1834539,
+      "durationSec": 20.01,
+      "speedX": 53.5,
+      "mbPerSec": 6.8,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.02,
+      "sound": "есть"
+    },
+    {
+      "file": "samples/02-h264-ac3-5.1.mkv",
+      "codec": "opus",
+      "sizeMb": 3,
+      "trackNumber": 1,
+      "verdict": "Файл не откроется",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: не открывается. Проверка звука коротким проигрыванием: не проводилась.",
+      "outputName": "02-h264-ac3-5.1.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 446,
+      "bytesIn": 2807521,
+      "bytesOut": 2018866,
+      "durationSec": 20,
+      "speedX": 44.8,
+      "mbPerSec": 6,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.02,
+      "sound": "есть"
+    },
+    {
+      "file": "samples/big-120min-ac3.mkv",
+      "codec": "opus",
+      "sizeMb": 2966,
+      "trackNumber": 1,
+      "verdict": "Файл не откроется",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: не открывается. Проверка звука коротким проигрыванием: не проводилась.",
+      "outputName": "big-120min-ac3.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 193703,
+      "bytesIn": 3109644042,
+      "bytesOut": 2824060638,
+      "durationSec": 7200.005,
+      "speedX": 37.2,
+      "mbPerSec": 15.3,
+      "firstVideoTs": {
+        "source": 0.005,
+        "output": 0.005
+      },
+      "outputDurationSec": 7200.025,
+      "sound": "есть"
+    },
+    {
+      "file": "samples/big-120min-dts.mkv",
+      "codec": "opus",
+      "sizeMb": 3879,
+      "trackNumber": 1,
+      "verdict": "Файл не откроется",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: не открывается. Проверка звука коротким проигрыванием: не проводилась.",
+      "outputName": "big-120min-dts.fixed.mp4",
+      "plan": "Звук DTS перекодируется в Opus (стерео); видео копируется без изменений.",
+      "ms": 293093,
+      "bytesIn": 4067730813,
+      "bytesOut": 2824077658,
+      "durationSec": 7200,
+      "speedX": 24.6,
+      "mbPerSec": 13.2,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 7200.02,
+      "sound": "есть"
+    }
+  ],
+  "pageErrors": []
+}

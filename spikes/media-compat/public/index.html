@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Исправить звук — прототип</title>
+<link rel="icon" href="data:,">
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; margin: 16px; max-width: 980px; color: #1b1b1b; background: #fff; }
+  h1 { font-size: 22px; } h2 { font-size: 18px; margin-top: 28px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .muted { color: #666; font-size: 13px; }
+  .ok { color: #0a7a2f; font-weight: 600; } .bad { color: #b00020; font-weight: 600; } .warn { color: #8a6d00; font-weight: 600; }
+  .verdict { padding: 10px 12px; border-radius: 8px; background: #f6f6f6; margin: 10px 0; }
+  .verdict.ok { background: #e8f5ec; color: inherit; font-weight: normal; }
+  .verdict.warn { background: #fff6dc; color: inherit; font-weight: normal; }
+  .verdict.bad { background: #fde8eb; color: inherit; font-weight: normal; }
+  video { width: 100%; max-width: 720px; background: #000; display: block; margin: 8px 0; }
+  progress { width: 100%; }
+  button { font: inherit; padding: 6px 14px; }
+  label { display: block; margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>Исправить звук — прототип</h1>
+<p class="muted">Файл не покидает компьютер: всё делается в этой вкладке, результат пишется в приватное хранилище браузера.
+Видео копируется без перекодирования, перекодируется только выбранная звуковая дорожка.</p>
+
+<h2>Браузер</h2>
+<table id="env"></table>
+
+<h2>1. Проверка файла</h2>
+<input type="file" id="file" accept="video/*,.mkv,.mp4,.m4v,.webm,.mov">
+<p id="fileinfo" class="muted"></p>
+<div id="verdict" class="verdict">Выберите фильм.</div>
+<table id="tracks"></table>
+<p class="muted">★ — дорожка помечена в файле как основная (в MP4 — «включённая»). ▶ — её этот браузер будет играть.</p>
+
+<div id="fix" hidden>
+  <h2>2. Исправить звук</h2>
+  <label>Кодек звука результата: <select id="codec"><option value="aac" selected>AAC — играет во всех браузерах</option><option value="opus">Opus — запасной (Safari его играет, но «не обещает»)</option></select></label>
+  <label><input type="checkbox" id="stereo" checked> Свести звук в стерео (быстрее; 5.1 обычно не нужен)</label>
+  <label id="copyDolbyRow" hidden><input type="checkbox" id="copyDolby"> Копировать Dolby без перекодирования (только для Safari — в Chrome и Firefox такой файл будет без звука)</label>
+  <label><input type="checkbox" id="fragmented"> Фрагментированный MP4 (переживает обрыв записи; перемотка может быть медленнее)</label>
+  <p><button id="run">Исправить звук выбранной дорожки</button> <button id="cancel" hidden>Отменить</button></p>
+  <div id="progress" hidden><progress id="bar" max="1" value="0"></progress><p id="ptext" class="muted"></p></div>
+</div>
+
+<div id="result" hidden>
+  <h2>3. Результат</h2>
+  <table id="stats"></table>
+  <video id="out" controls playsinline></video>
+  <p><button id="save">Сохранить копию на диск</button> <button id="remove">Удалить из хранилища браузера</button></p>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

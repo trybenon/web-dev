@@ -1,0 +1,170 @@
+{
+  "date": "2026-10-06T20:10:36.535Z",
+  "chromium": "141.0.7390.37",
+  "env": {
+    "browser": "chrome",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
+    "webCodecsAudio": true,
+    "nativeAacEncoder": false,
+    "opfs": true,
+    "savePicker": true,
+    "quotaFreeMb": 154812
+  },
+  "results": [
+    {
+      "file": "samples/vp9-ac3-5.1.mkv",
+      "codec": "aac",
+      "sizeMb": 2,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-ac3-5.1.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 2332,
+      "bytesIn": 2607719,
+      "bytesOut": 1791825,
+      "durationSec": 20,
+      "speedX": 8.6,
+      "mbPerSec": 1.1,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.032,
+      "sound": "нет"
+    },
+    {
+      "file": "samples/vp9-eac3-5.1.mkv",
+      "codec": "aac",
+      "sizeMb": 2,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-eac3-5.1.fixed.mp4",
+      "plan": "Звук E-AC-3 (Dolby Digital Plus) перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 2205,
+      "bytesIn": 2446110,
+      "bytesOut": 1824165,
+      "durationSec": 20,
+      "speedX": 9.1,
+      "mbPerSec": 1.1,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.032,
+      "sound": "нет"
+    },
+    {
+      "file": "samples/vp9-dts-5.1.mkv",
+      "codec": "aac",
+      "sizeMb": 3,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-dts-5.1.fixed.mp4",
+      "plan": "Звук DTS перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 1232,
+      "bytesIn": 3411003,
+      "bytesOut": 1546246,
+      "durationSec": 20,
+      "speedX": 16.2,
+      "mbPerSec": 2.6,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.032,
+      "sound": "нет"
+    },
+    {
+      "file": "samples/vp9-ac3+aac.mkv",
+      "codec": "aac",
+      "sizeMb": 3,
+      "trackNumber": 1,
+      "verdict": "Звука не будет",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: открывается. Проверка звука коротким проигрыванием: нет.",
+      "outputName": "vp9-ac3+aac.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 2368,
+      "bytesIn": 2678419,
+      "bytesOut": 1811309,
+      "durationSec": 20.01,
+      "speedX": 8.5,
+      "mbPerSec": 1.1,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.032,
+      "sound": "нет"
+    },
+    {
+      "file": "samples/02-h264-ac3-5.1.mkv",
+      "codec": "aac",
+      "sizeMb": 3,
+      "trackNumber": 1,
+      "verdict": "Файл не откроется",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: не открывается. Проверка звука коротким проигрыванием: не проводилась.",
+      "outputName": "02-h264-ac3-5.1.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 2066,
+      "bytesIn": 2807521,
+      "bytesOut": 1995636,
+      "durationSec": 20,
+      "speedX": 9.7,
+      "mbPerSec": 1.3,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 20.032,
+      "sound": "результат не открылся в этом браузере (DEMUXER_ERROR_NO_SUPPORTED_STREAMS: FFmpegDemuxer: no supported streams)"
+    },
+    {
+      "file": "samples/big-120min-ac3.mkv",
+      "codec": "aac",
+      "sizeMb": 2966,
+      "trackNumber": 1,
+      "verdict": "Файл не откроется",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: не открывается. Проверка звука коротким проигрыванием: не проводилась.",
+      "outputName": "big-120min-ac3.fixed.mp4",
+      "plan": "Звук AC-3 (Dolby Digital) перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 439991,
+      "bytesIn": 3109644042,
+      "bytesOut": 2879406619,
+      "durationSec": 7200.005,
+      "speedX": 16.4,
+      "mbPerSec": 6.7,
+      "firstVideoTs": {
+        "source": 0.005,
+        "output": 0.005
+      },
+      "outputDurationSec": 7200.026333333333,
+      "sound": "результат не открылся в этом браузере (DEMUXER_ERROR_NO_SUPPORTED_STREAMS: FFmpegDemuxer: no supported streams)"
+    },
+    {
+      "file": "samples/big-120min-dts.mkv",
+      "codec": "aac",
+      "sizeMb": 3879,
+      "trackNumber": 1,
+      "verdict": "Файл не откроется",
+      "checkLine": "Прогноз — по ответам браузера и замерам команды. Проверка открытием: не открывается. Проверка звука коротким проигрыванием: не проводилась.",
+      "outputName": "big-120min-dts.fixed.mp4",
+      "plan": "Звук DTS перекодируется в AAC (стерео); видео копируется без изменений.",
+      "ms": 489827,
+      "bytesIn": 4067730813,
+      "bytesOut": 2879427269,
+      "durationSec": 7200,
+      "speedX": 14.7,
+      "mbPerSec": 7.9,
+      "firstVideoTs": {
+        "source": 0,
+        "output": 0
+      },
+      "outputDurationSec": 7200.021333333333,
+      "sound": "результат не открылся в этом браузере (DEMUXER_ERROR_NO_SUPPORTED_STREAMS: FFmpegDemuxer: no supported streams)"
+    }
+  ],
+  "pageErrors": []
+}
