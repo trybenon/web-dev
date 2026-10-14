@@ -16,11 +16,11 @@ export default defineConfig([
     "spikes/**",
   ]),
   {
-    files: ["**/*.{js,mjs,cjs,ts,tsx}"],
+    files: ["**/*.{js,mjs,cjs,ts,mts,tsx}"],
     extends: [js.configs.recommended],
   },
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["**/*.{ts,mts,tsx}"],
     extends: [tseslint.configs.recommended],
   },
   {
@@ -32,7 +32,7 @@ export default defineConfig([
   {
     files: [
       "server/**/*.{js,ts}",
-      "*.{js,mjs,cjs,ts}",
+      "*.{js,mjs,cjs,ts,mts}",
       "client/vite.config.ts",
     ],
     languageOptions: {
@@ -40,7 +40,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["client/src/**/*.{ts,tsx}"],
+    files: ["client/src/**/*.{ts,mts,tsx}"],
     extends: [reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
   },
 ]);
