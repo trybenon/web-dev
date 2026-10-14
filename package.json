@@ -8,11 +8,25 @@
     "shared"
   ],
   "devDependencies": {
-    "concurrently": "^10.0.6"
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.6",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "stylelint": "^17.16.0",
+    "stylelint-config-standard": "^40.0.0",
+    "typescript-eslint": "^8.71.2"
   },
   "scripts": {
     "predev": "npm run build --workspace=shared",
     "dev": "concurrently --kill-others --names client,server \"npm run dev --workspace=client\" \"npm run dev --workspace=server\"",
-    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client"
+    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client",
+    "lint:js": "eslint . --max-warnings=0",
+    "lint:css": "stylelint \"client/**/*.css\" --max-warnings=0",
+    "lint": "npm run lint:js && npm run lint:css",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   }
 }
