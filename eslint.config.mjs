@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import globals from "globals";
-import reactHooks from "eslint-plugin-react-hooks";
-import reactRefresh from "eslint-plugin-react-refresh";
+import vue from "eslint-plugin-vue";
 import tseslint from "typescript-eslint";
 import { defineConfig, globalIgnores } from "eslint/config";
 
@@ -16,15 +15,15 @@ export default defineConfig([
     "spikes/**",
   ]),
   {
-    files: ["**/*.{js,mjs,cjs,ts,mts,tsx}"],
+    files: ["**/*.{js,mjs,cjs,ts,mts,vue}"],
     extends: [js.configs.recommended],
   },
   {
-    files: ["**/*.{ts,mts,tsx}"],
+    files: ["**/*.{ts,mts}"],
     extends: [tseslint.configs.recommended],
   },
   {
-    files: ["client/src/**/*.{js,ts,tsx}"],
+    files: ["client/src/**/*.{js,ts,vue}"],
     languageOptions: {
       globals: globals.browser,
     },
@@ -40,7 +39,12 @@ export default defineConfig([
     },
   },
   {
-    files: ["client/src/**/*.{ts,mts,tsx}"],
-    extends: [reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
+    files: ["client/src/**/*.vue"],
+    extends: [tseslint.configs.recommended, vue.configs["flat/essential"]],
+    languageOptions: {
+      parserOptions: {
+        parser: tseslint.parser,
+      },
+    },
   },
 ]);

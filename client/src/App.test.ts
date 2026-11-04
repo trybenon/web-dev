@@ -1,12 +1,15 @@
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment jsdom
+
+import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import App from "./App";
+import App from "./App.vue";
 
 describe("App", () => {
   it("renders the main page heading", () => {
-    const html = renderToStaticMarkup(createElement(App));
+    const wrapper = mount(App);
 
-    expect(html).toContain("<h1>Совместный просмотр видео</h1>");
+    expect(wrapper.get("h1").text()).toBe("Совместный просмотр видео");
+
+    wrapper.unmount();
   });
 });
