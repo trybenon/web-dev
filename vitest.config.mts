@@ -29,7 +29,7 @@ export default defineConfig({
       exclude: [
         "**/*.test.ts",
         "**/*.d.ts",
-        "client/src/main.tsx",
+        "client/src/main.ts",
         "server/src/index.ts",
         "shared/src/index.ts",
       ],
