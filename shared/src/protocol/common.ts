@@ -4,7 +4,8 @@ import { z } from "zod";
 export const LIMITS = {
   maxPeers: 4,
   maxNameLength: 32,
-  maxMessageBytes: 64 * 1024,
+  /** Предел одного сообщения протокола по WebSocket, байт. Больше — сервер рвёт соединение не разбирая. */
+  maxWsMessageBytes: 64 * 1024,
 } as const;
 
 /**Идентификатор участника. Выдает сервер при входе. */
