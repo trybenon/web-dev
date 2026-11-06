@@ -1,9 +1,9 @@
 import { fileURLToPath } from "node:url";
-import react from "@vitejs/plugin-react";
+import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [vue()],
   resolve: {
     alias: {
       "@watch-together/shared": fileURLToPath(
@@ -22,14 +22,14 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html"],
       include: [
-        "client/src/**/*.{ts,tsx}",
+        "client/src/**/*.{ts,vue}",
         "server/src/**/*.ts",
         "shared/src/**/*.ts",
       ],
       exclude: [
         "**/*.test.ts",
         "**/*.d.ts",
-        "client/src/main.tsx",
+        "client/src/main.ts",
         "server/src/index.ts",
         "shared/src/index.ts",
       ],

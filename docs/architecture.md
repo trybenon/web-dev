@@ -404,9 +404,9 @@ Safari MKV не открывает, но MP4 с AAC играет — поэто�
 | Слой | Чем реализовано | Почему |
 |---|---|---|
 | Язык | TypeScript **~6.0** | `npm i typescript` сейчас ставит 7.0, с которой не работает typescript-eslint (поддержка `<6.1.0`). Версию нужно закрепить |
-| Интерфейс | React 19 | |
-| Компоненты | MUI 9 или antd 6 — решает команда | требование курса |
-| Состояние | Redux Toolkit 2 | Redux явно назван в требованиях курса; события воркера естественно ложатся в экшены, и в Redux DevTools виден весь ход синхронизации |
+| Интерфейс | Vue 3, Composition API, SFC | Компоненты с `<script setup lang="ts">` |
+| Компоненты | Element Plus | Готовые компоненты интерфейса |
+| Состояние | Pinia | Общее состояние Vue-приложения, поддержка TypeScript и Vue DevTools |
 | Сборка | Vite 8 | воркер подключается как `new Worker(new URL('./sync.worker.ts', import.meta.url), { type: 'module' })` |
 | Воспроизведение | HTMLVideoElement, `requestVideoFrameCallback` | точная пара «кадр — момент показа» |
 | Фоновые вычисления | Web Worker | синхронизация; запись исправленной копии |
