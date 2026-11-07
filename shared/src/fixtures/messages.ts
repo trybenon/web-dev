@@ -46,6 +46,10 @@ export const clientExamples = {
   },
   roomLeave: { type: "room:leave", payload: {} },
   syncPing: { type: "sync:ping", payload: { t0: 5321.4 } },
+  playbackIntentPause: {
+    type: "playback:intent",
+    payload: { action: "pause" },
+  },
   playbackIntent: {
     type: "playback:intent",
     payload: { action: "seek", positionMs: 600_000 },
@@ -72,7 +76,7 @@ export const clientExamples = {
       hasSource: false,
       deviationMs: null,
       deviationAt: 1_000_500,
-      appliedRev: 7,
+      appliedRev: -1,
       rttMs: 95,
     },
   },
@@ -127,6 +131,7 @@ export const serverExamples = {
   playbackHold: {
     type: "playback:hold",
     payload: {
+      rev: 8,
       waitingFor: ["peer-petya"],
       reason: "buffering",
       deadline: 1_008_000,
@@ -135,6 +140,7 @@ export const serverExamples = {
   playbackHoldNoSource: {
     type: "playback:hold",
     payload: {
+      rev: 8,
       waitingFor: ["peer-petya"],
       reason: "no-source",
       deadline: 1_008_000,
@@ -211,6 +217,14 @@ export const invalidClientMessages: { why: string; data: unknown }[] = [
       type: "playback:intent",
       payload: { action: "stop", positionMs: 0 },
     },
+  },
+  {
+    why: "перемотка без позиции",
+    data: { type: "playback:intent", payload: { action: "seek" } },
+  },
+  {
+    why: "rttMs больше 10 секунд",
+    data: { type: "presence:update", payload: { ...presence, rttMs: 1e9 } },
   },
   {
     why: "отрицательная позиция",

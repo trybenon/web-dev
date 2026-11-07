@@ -22,10 +22,12 @@ export const PlaybackSchema = z.object({
 // клиент => сервер
 export const PlaybackIntentSchema = defineMessage(
   "playback:intent",
-  z.object({
-    action: z.enum(["play", "pause", "seek"]),
-    positionMs: MsSchema,
-  }),
+  // позицию несёт только перемотка: play и pause сервер считает сам
+  z.discriminatedUnion("action", [
+    z.object({ action: z.literal("play") }),
+    z.object({ action: z.literal("pause") }),
+    z.object({ action: z.literal("seek"), positionMs: MsSchema }),
+  ]),
 );
 
 // сервер => всем
@@ -37,6 +39,8 @@ export const PlaybackStateSchema = defineMessage(
 export const PlaybackHoldSchema = defineMessage(
   "playback:hold",
   z.object({
+    /** Ревизия состояния waiting, к которой относится удержание. */
+    rev: RevSchema,
     waitingFor: z.array(PeerIdSchema),
     reason: z.enum(["buffering", "seeking", "no-source"]),
     deadline: ServerTimeSchema,

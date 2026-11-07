@@ -4,7 +4,6 @@ import {
   defineMessage,
   MsSchema,
   PeerIdSchema,
-  RevSchema,
   ServerTimeSchema,
 } from "./common.js";
 
@@ -19,9 +18,10 @@ export const PresenceSchema = z.object({
   deviationMs: z.number().nullable(),
   /** Момент замера отклонения по серверным часам. */
   deviationAt: ServerTimeSchema,
-  /** Ревизия, к которой плеер уже подготовлен. */
-  appliedRev: RevSchema,
-  rttMs: MsSchema,
+  /** Ревизия, к которой плеер уже подготовлен; −1 — ещё ничего не применял. */
+  appliedRev: z.number().int().min(-1),
+  /** Больше 10 с не бывает; без предела один клиент отодвинул бы старт для всех. */
+  rttMs: MsSchema.max(10_000),
 });
 
 /** То же по одному участнику в рассылке сервера. */
