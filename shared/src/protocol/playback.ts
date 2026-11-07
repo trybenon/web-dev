@@ -10,7 +10,7 @@ import {
 /** Авторитетное состояние воспроизведения комнаты (docs/sync-start.md, раздел 3). */
 export const PlaybackSchema = z.object({
   rev: RevSchema,
-  status: z.enum(["playing", "pause", "waiting"]),
+  status: z.enum(["playing", "paused", "waiting"]),
   /** В момент anchorServerTime головка должна стоять в positionMs. */
   positionMs: MsSchema,
   anchorServerTime: ServerTimeSchema,
@@ -38,7 +38,7 @@ export const PlaybackHoldSchema = defineMessage(
   "playback:hold",
   z.object({
     waitingFor: z.array(PeerIdSchema),
-    reason: z.enum(["buffering", "seeking", "no-sourse"]),
+    reason: z.enum(["buffering", "seeking", "no-source"]),
     deadline: ServerTimeSchema,
   }),
 );

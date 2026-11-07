@@ -113,11 +113,30 @@ export const serverExamples = {
     payload: { t0: 5321.4, t1: 1_000_020, t2: 1_000_021 },
   },
   playbackState: { type: "playback:state", payload: playback },
+  playbackStateInitial: {
+    type: "playback:state",
+    payload: {
+      rev: 0,
+      status: "paused",
+      positionMs: 0,
+      anchorServerTime: 1_000_000,
+      rate: 1,
+      setBy: null,
+    },
+  },
   playbackHold: {
     type: "playback:hold",
     payload: {
       waitingFor: ["peer-petya"],
       reason: "buffering",
+      deadline: 1_008_000,
+    },
+  },
+  playbackHoldNoSource: {
+    type: "playback:hold",
+    payload: {
+      waitingFor: ["peer-petya"],
+      reason: "no-source",
       deadline: 1_008_000,
     },
   },
