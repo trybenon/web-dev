@@ -4,7 +4,7 @@
 
 ## Структура
 
-- client/ — клиент на React, TypeScript и Vite.
+- client/ — клиент на Vue 3, TypeScript и Vite.
 - server/ — HTTP-сервер на Node.js и TypeScript.
 - shared/ — общий пакет типов и кода.
 - docs/ — документация проекта.
@@ -160,7 +160,7 @@ npm run coverage
 Исключены:
 
 - тестовые файлы и файлы описаний типов .d.ts;
-- client/src/main.tsx — подключение React к странице;
+- client/src/main.ts — подключение Vue, Pinia и Element Plus к странице;
 - server/src/index.ts — запуск сервера на фиксированном порту;
 - shared/src/index.ts — сейчас содержит только интерфейс TypeScript.
   При добавлении исполняемой логики в исключённые файлы
