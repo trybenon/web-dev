@@ -24,6 +24,7 @@ const source: SourceInfo = {
   fingerprint,
   durationMs: 5_400_000,
   fileName: "film.mkv",
+  rev: 3,
   proposedBy: "peer-anya",
 };
 
@@ -79,7 +80,10 @@ export const clientExamples = {
     type: "source:propose",
     payload: { fingerprint, durationMs: 5_400_000, fileName: "film.mkv" },
   },
-  sourceMatched: { type: "source:matched", payload: { ok: true } },
+  sourceMatched: {
+    type: "source:matched",
+    payload: { sourceRev: 3, ok: true },
+  },
 } satisfies Record<string, ClientMessage>;
 
 export const serverExamples = {
@@ -166,6 +170,10 @@ export const invalidClientMessages: { why: string; data: unknown }[] = [
   { why: "нет конверта", data: { roomId: "k7f3q", name: "Петя" } },
   { why: "неизвестный тип", data: { type: "room:destroy", payload: {} } },
   { why: "нет payload", data: { type: "sync:ping" } },
+  {
+    why: "сверка без номера источника",
+    data: { type: "source:matched", payload: { ok: true } },
+  },
   {
     why: "серверное сообщение от клиента",
     data: { type: "room:peer_left", payload: { peerId: "peer-petya" } },

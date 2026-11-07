@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineMessage, MsSchema, PeerIdSchema } from "./common.js";
+import { defineMessage, MsSchema, PeerIdSchema, RevSchema } from "./common.js";
 
 /** Размер одного куска файла для отпечатка: 1 МиБ. */
 export const SAMPLE_BYTES = 1_048_576;
@@ -26,6 +26,8 @@ export const SourceOfferSchema = z.object({
 
 /** Источник комнаты: предложение плюс кто его сделал. */
 export const SourceInfoSchema = SourceOfferSchema.extend({
+  /** Номер источника в комнате: растёт при каждой смене. */
+  rev: RevSchema,
   proposedBy: PeerIdSchema,
 });
 
@@ -37,7 +39,11 @@ export const SourceProposeSchema = defineMessage(
 
 export const SourceMatchedSchema = defineMessage(
   "source:matched",
-  z.object({ ok: z.boolean() }),
+  z.object({
+    /** С каким источником сверялись. Устаревший ответ сервер отбрасывает. */
+    sourceRev: RevSchema,
+    ok: z.boolean(),
+  }),
 );
 
 // сервер → всем
