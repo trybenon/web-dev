@@ -315,14 +315,25 @@ describe("Room: барьер готовности", () => {
     });
   });
 
-  it("presenceSync рассылает тех, кто уже отчитался", () => {
+  it("presenceSync рассылает всех; кто не отчитался — с пустым отчётом", () => {
     const room = roomWith(2);
     room.presence("p1", ready(0), 0);
     expect(room.presenceSync()).toMatchObject({
       to: "all",
       msg: {
         type: "presence:sync",
-        payload: { peers: [{ peerId: "p1", connection: "online" }] },
+        payload: {
+          peers: [
+            { peerId: "p1", connection: "online", hasSource: true },
+            {
+              peerId: "p2",
+              connection: "online",
+              hasSource: false,
+              appliedRev: -1,
+              deviationMs: null,
+            },
+          ],
+        },
       },
     });
   });
@@ -460,6 +471,29 @@ describe("Room: обрыв связи", () => {
           peers: [{}, { peerId: "p2", connection: "online" }],
         },
       },
+    });
+  });
+
+  it("обрыв и возвращение до первого отчёта видны остальным", () => {
+    const room = roomWith(2);
+    expect(room.disconnect("p2", 0)).toMatchObject([
+      {
+        to: "all",
+        msg: {
+          type: "presence:sync",
+          payload: {
+            peers: [
+              { peerId: "p1" },
+              { peerId: "p2", connection: "reconnecting" },
+            ],
+          },
+        },
+      },
+    ]);
+    const back = room.reconnect("p2");
+    expect(back[1]).toMatchObject({
+      to: "all",
+      msg: { payload: { peers: [{}, { peerId: "p2", connection: "online" }] } },
     });
   });
 

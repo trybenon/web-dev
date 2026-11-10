@@ -78,6 +78,22 @@ interface Member {
   presence: Presence | null;
 }
 
+/**
+ * Пустой отчёт для presence:sync, пока участник ни разу не отчитался.
+ * Каждое поле значит «ничего не знаем»: файла нет, ничего не применял,
+ * отклонения нет. Так статус соединения доходит до всех и без отчёта.
+ */
+const NO_PRESENCE: Presence = {
+  readyState: 0,
+  bufferedAheadMs: 0,
+  playerState: "paused",
+  hasSource: false,
+  deviationMs: null,
+  deviationAt: 0,
+  appliedRev: -1,
+  rttMs: 0,
+};
+
 interface Barrier {
   waitingFor: Set<PeerId>;
   deadline: number;
@@ -229,17 +245,15 @@ export class Room {
     // не дождались: стартуем без отставших, они догонят сами
     return this.startPlaying(this.state.positionMs, this.state.setBy, now);
   }
-  /** Готовность всех, кто уже отчитался, — адаптер рассылает раз в секунду. */
+  /** Готовность и связь всех участников — адаптер рассылает раз в секунду. */
   presenceSync(): Outbound {
     const peers: PeerPresence[] = [];
     for (const m of this.members.values()) {
-      if (m.presence) {
-        peers.push({
-          ...m.presence,
-          peerId: m.peerId,
-          connection: m.connection,
-        });
-      }
+      peers.push({
+        ...(m.presence ?? NO_PRESENCE),
+        peerId: m.peerId,
+        connection: m.connection,
+      });
     }
     return { to: "all", msg: { type: "presence:sync", payload: { peers } } };
   }
