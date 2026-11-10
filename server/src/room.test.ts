@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Room, type Outbound } from "./room.js";
-import type { Presence } from "@watch-together/shared";
+import { clientExamples, type Presence } from "@watch-together/shared";
+
 
 
 /** Типы сообщений по порядку — так проще сравнивать. */
@@ -27,6 +28,8 @@ function ready(rev: number, extra: Partial<Presence> = {}): Presence {
     ...extra,
   };
 }
+
+const offer = clientExamples.sourcePropose.payload;
 
 describe("Room: начальное состояние", () => {
   it("новая комната на паузе в начале, якорь - момент создания", () => {
@@ -296,5 +299,77 @@ describe("Room: барьер готовности", () => {
         payload: { peers: [{ peerId: "p1", connection: "online" }] },
       },
     });
+  });
+});
+
+describe("Room: источник", () => {
+  it("смена источника: номер растёт, сверки сброшены, пауза в начале", () => {
+    const room = roomWith(2);
+    room.intent("p1", { action: "play" }, 0);
+    room.matchSource("p2", 0, true); // источника ещё нет — отброшено
+
+    const out = room.proposeSource("p1", offer, 1_000);
+    expect(types(out)).toEqual(["source:state", "playback:state"]);
+    expect(out[0]).toMatchObject({
+      to: "all",
+      msg: {
+        payload: { source: { rev: 1, proposedBy: "p1" }, checks: [] },
+      },
+    });
+    expect(room.playback).toMatchObject({
+      status: "paused",
+      positionMs: 0,
+      setBy: "p1",
+    });
+    expect(types(room.proposeSource("p2", offer, 2_000))).toEqual([
+      "source:state",
+      "playback:state",
+    ]);
+  });
+
+  it("сверка только для текущего номера; повторная заменяет прежнюю", () => {
+    const room = roomWith(2);
+    room.proposeSource("p1", offer, 0);
+    room.proposeSource("p1", offer, 0); // теперь номер 2
+    expect(room.matchSource("p2", 1, true)).toEqual([]);
+    room.matchSource("p2", 2, false);
+    const out = room.matchSource("p2", 2, true);
+    expect(out).toMatchObject([
+      { msg: { payload: { checks: [{ peerId: "p2", ok: true }] } } },
+    ]);
+  });
+
+  it("источник от незнакомца — not_joined", () => {
+    const room = new Room("r", 0);
+    expect(types(room.proposeSource("x", offer, 0))).toEqual(["error"]);
+    expect(types(room.matchSource("x", 1, true))).toEqual(["error"]);
+  });
+
+  it("новичок получает сверки отдельным source:state", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", offer, 0);
+    room.matchSource("p1", 1, true);
+    const out = room.join("p2", "P2", "token-2");
+    expect(types(out)).toEqual([
+      "room:state",
+      "source:state",
+      "room:peer_joined",
+    ]);
+    expect(out[1]).toMatchObject({
+      to: "p2",
+      msg: { payload: { checks: [{ peerId: "p1", ok: true }] } },
+    });
+  });
+
+  it("у конца ролика не требует буфера больше оставшегося", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.presence("p1", ready(room.playback.rev), 0);
+    room.intent("p1", { action: "seek", positionMs: 59_000 }, 0);
+    room.intent("p1", { action: "play" }, 0);
+    // до конца 1 с: 900 мс в буфере хватает, хотя порог — 2 с
+    const near = ready(room.playback.rev, { bufferedAheadMs: 900 });
+    expect(types(room.presence("p1", near, 100))).toEqual(["playback:state"]);
+    expect(room.playback.status).toBe("playing");
   });
 });

@@ -26,6 +26,7 @@ import type {
   RoomId,
   ServerMessage,
   SourceInfo,
+  SourceOffer,
 } from "@watch-together/shared";
 
 
@@ -39,6 +40,8 @@ export interface RoomConfig {
   leadExtraMs: number;
   /** Сколько видео впереди должно лежать в буфере, чтобы считаться готовым, мс. */
   readyBufferMs: number;
+  /** Погрешность длительности и буфера у конца ролика, мс. */
+  endSlackMs: number;
 }
 
 export const DEFAULT_ROOM_CONFIG: RoomConfig = {
@@ -47,6 +50,7 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   minLeadMs: 300,
   leadExtraMs: 200,
   readyBufferMs: 2_000,
+  endSlackMs: 250,
 };
 /** Что хочет участник: play, pause или seek с позицией. */
 export type PlaybackIntent = Extract<
@@ -86,7 +90,9 @@ export class Room {
   private readonly members = new Map<PeerId, Member>();
   private state: Playback;
   private barrier: Barrier | null = null;
+  /** Источник комнаты; null — ещё не выбран. */
   private source: SourceInfo | null = null;
+  private checks: { peerId: PeerId; ok: boolean }[] = [];
 
   constructor(id: RoomId, now: number, config: Partial<RoomConfig> = {}) {
     this.id = id;
@@ -219,6 +225,42 @@ export class Room {
     }
     return { to: "all", msg: { type: "presence:sync", payload: { peers } } };
   }
+  proposeSource(peerId: PeerId, offer: SourceOffer, now: number): Outbound[] {
+    if (!this.members.has(peerId)) {
+      return [error(peerId, "not_joined", "Сначала войдите в комнату")];
+    }
+    this.source = {
+      ...offer,
+      rev: (this.source?.rev ?? 0) + 1,
+      proposedBy: peerId,
+    };
+    this.checks = [];
+    this.barrier = null;
+    // новый фильм — с начала и на паузе
+    return [
+      { to: "all", msg: this.sourceState() },
+      ...this.commit({
+        status: "paused",
+        positionMs: 0,
+        anchorServerTime: now,
+        setBy: peerId,
+      }),
+    ];
+  }
+
+  matchSource(peerId: PeerId, sourceRev: number, ok: boolean): Outbound[] {
+    if (!this.members.has(peerId)) {
+      return [error(peerId, "not_joined", "Сначала войдите в комнату")];
+    }
+    // ответ про прошлый фильм молча отбрасываем
+    if (!this.source || this.source.rev !== sourceRev) return [];
+    // от каждого участника одна сверка: новая заменяет прежнюю
+    this.checks = [
+      ...this.checks.filter((c) => c.peerId !== peerId),
+      { peerId, ok },
+    ];
+    return [{ to: "all", msg: this.sourceState() }];
+  }
 
   // ─── внутреннее ───────────────────────────────────────────────────
   private snapshot(member: Member): Outbound[] {
@@ -238,6 +280,8 @@ export class Room {
         },
       },
     ];
+    // в room:state сверок нет: новичку их отдельным сообщением
+    if (this.source) out.push({ to: member.peerId, msg: this.sourceState() });
     return out;
   }
   /** Запас до якоря: команда должна дойти до самого медленного. */
@@ -260,6 +304,13 @@ export class Room {
         msg: { type: "playback:state", payload: this.playback },
       },
     ];
+  }
+
+  private sourceState(): ServerMessage {
+    return {
+      type: "source:state",
+      payload: { source: this.source, checks: this.checks },
+    };
   }
   private startPlaying(
     positionMs: number,
@@ -356,6 +407,13 @@ export class Room {
   }
 
   private requiredBufferMs(): number {
+    const durationMs = this.source?.durationMs;
+    if (durationMs != null) {
+      // у конца ролика больше оставшегося в буфер не положить
+      const leftMs =
+        durationMs - this.state.positionMs - this.config.endSlackMs;
+      return Math.max(0, Math.min(this.config.readyBufferMs, leftMs));
+    }
     return this.config.readyBufferMs;
   }
 }
