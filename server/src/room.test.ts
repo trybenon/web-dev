@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Room, type Outbound } from "./room.js";
+import type { Presence } from "@watch-together/shared";
 
 
 /** Типы сообщений по порядку — так проще сравнивать. */
@@ -10,6 +11,21 @@ function roomWith(n: number): Room {
   const room = new Room("r", 0);
   for (let i = 1; i <= n; i++) room.join(`p${i}`, `P${i}`, `token-${i}`);
   return room;
+}
+
+/** Отчёт «готов к ревизии rev»: файл есть, буфера с запасом. */
+function ready(rev: number, extra: Partial<Presence> = {}): Presence {
+  return {
+    readyState: 4,
+    bufferedAheadMs: 5_000,
+    playerState: "paused",
+    hasSource: true,
+    deviationMs: 0,
+    deviationAt: 0,
+    appliedRev: rev,
+    rttMs: 0,
+    ...extra,
+  };
 }
 
 describe("Room: начальное состояние", () => {
@@ -78,11 +94,11 @@ describe("Room: вход и выход", () => {
 
   it("выход: всем room:peer_left; выход незнакомца — пустой список", () => {
     const room = roomWith(2);
-    expect(room.leave("p2")).toMatchObject([
+    expect(room.leave("p2", 0)).toMatchObject([
       { to: "all", msg: { type: "room:peer_left", payload: { peerId: "p2" } } },
     ]);
     expect(room.size).toBe(1);
-    expect(room.leave("x")).toEqual([]);
+    expect(room.leave("x", 0)).toEqual([]);
   });
 });
 
@@ -160,5 +176,125 @@ describe("Room: намерения", () => {
     const before = room.playback;
     room.join("p2", "P2", "token-2");
     expect(room.playback).toEqual(before);
+  });
+});
+
+describe("Room: барьер готовности", () => {
+  it("ждёт всех с файлом; старое «готов» до перемотки не засчитывается", () => {
+    const room = roomWith(2);
+    room.presence("p1", ready(0), 0);
+    room.presence("p2", ready(0), 0);
+    const out = room.intent("p1", { action: "play" }, 1_000);
+    expect(types(out)).toEqual(["playback:state", "playback:hold"]);
+    const waitRev = room.playback.rev;
+    expect(out[1]).toMatchObject({
+      msg: {
+        payload: {
+          rev: waitRev,
+          waitingFor: ["p1", "p2"],
+          reason: "buffering",
+          deadline: 11_000,
+        },
+      },
+    });
+
+    // отчёт с прошлой ревизией не отпускает барьер
+    expect(room.presence("p1", ready(waitRev - 1), 1_100)).toEqual([]);
+    // p1 готов к новой ревизии: ждём только p2, и все об этом узнают
+    expect(room.presence("p1", ready(waitRev), 1_200)).toMatchObject([
+      { msg: { type: "playback:hold", payload: { waitingFor: ["p2"] } } },
+    ]);
+    // мало буфера — ещё не готов
+    const thin = ready(waitRev, { bufferedAheadMs: 500 });
+    expect(room.presence("p2", thin, 1_300)).toEqual([]);
+
+    const out2 = room.presence("p2", ready(waitRev, { rttMs: 250 }), 1_400);
+    expect(types(out2)).toEqual(["playback:state"]);
+    // якорь: наибольший RTT + 200 мс, но не меньше 300
+    expect(room.playback).toMatchObject({
+      status: "playing",
+      anchorServerTime: 1_400 + 450,
+      setBy: "p1",
+    });
+  });
+
+  it("по дедлайну стартует без отставших", () => {
+    const room = roomWith(2);
+    room.presence("p1", ready(0), 0);
+    room.presence("p2", ready(0), 0);
+    room.intent("p1", { action: "play" }, 1_000);
+    expect(room.tick(5_000)).toEqual([]);
+    const out = room.tick(1_000 + room.config.barrierTimeoutMs);
+    expect(types(out)).toEqual(["playback:state"]);
+    expect(room.playback.status).toBe("playing");
+    expect(room.tick(99_999)).toEqual([]);
+  });
+
+  it("выход участника, которого ждали, отпускает барьер", () => {
+    const room = roomWith(2);
+    room.presence("p1", ready(0), 0);
+    room.presence("p2", ready(0), 0);
+    room.intent("p1", { action: "play" }, 1_000);
+    room.presence("p1", ready(room.playback.rev), 1_100);
+    const out = room.leave("p2", 1_200);
+    expect(types(out)).toEqual(["room:peer_left", "playback:state"]);
+    expect(room.playback.status).toBe("playing");
+  });
+
+  it("наблюдатель без файла комнату не держит", () => {
+    const room = roomWith(2);
+    room.presence("p1", ready(0), 0);
+    room.presence("p2", ready(0, { hasSource: false }), 0);
+    room.intent("p1", { action: "play" }, 0);
+    expect(room.waitingFor).toEqual(["p1"]);
+  });
+
+  it("отчёт незнакомца игнорируется", () => {
+    expect(new Room("r", 0).presence("x", ready(0), 0)).toEqual([]);
+  });
+
+  it("пауза во время ожидания снимает барьер и оставляет позицию", () => {
+    const room = roomWith(1);
+    room.presence("p1", ready(0), 0);
+    room.intent("p1", { action: "seek", positionMs: 5_000 }, 0);
+    room.intent("p1", { action: "play" }, 1_000);
+    expect(room.playback.status).toBe("waiting");
+    room.intent("p1", { action: "pause" }, 2_000);
+    expect(room.playback).toMatchObject({
+      status: "paused",
+      positionMs: 5_000,
+    });
+    expect(room.waitingFor).toEqual([]);
+  });
+
+  it("перемотка во время игры проходит через барьер", () => {
+    const room = roomWith(1);
+    room.presence("p1", ready(0), 0);
+    room.intent("p1", { action: "play" }, 0);
+    room.presence("p1", ready(room.playback.rev), 100);
+    expect(room.playback.status).toBe("playing");
+    const out = room.intent(
+      "p1",
+      { action: "seek", positionMs: 60_000 },
+      1_000,
+    );
+    expect(types(out)).toEqual(["playback:state", "playback:hold"]);
+    expect(out[1]).toMatchObject({ msg: { payload: { reason: "seeking" } } });
+    expect(room.playback).toMatchObject({
+      status: "waiting",
+      positionMs: 60_000,
+    });
+  });
+
+  it("presenceSync рассылает тех, кто уже отчитался", () => {
+    const room = roomWith(2);
+    room.presence("p1", ready(0), 0);
+    expect(room.presenceSync()).toMatchObject({
+      to: "all",
+      msg: {
+        type: "presence:sync",
+        payload: { peers: [{ peerId: "p1", connection: "online" }] },
+      },
+    });
   });
 });

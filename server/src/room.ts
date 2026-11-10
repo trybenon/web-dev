@@ -4,14 +4,25 @@
  * Модуль не знает про сокеты и таймеры: каждый метод получает текущее
  * время по часам сервера и возвращает список исходящих сообщений.
  * Адаптер (#19) рассылает их по соединениям и регулярно зовёт tick.
+ * Так барьер, дедлайн и якорь проверяются тестами без сети и ожидания.
+ *
+ * Правила (docs/sync-start.md, docs/protocol.md):
+ * - управление общее: намерение принимается от любого участника;
+ * - любое изменение воспроизведения увеличивает rev;
+ * - запуск и перемотка во время игры проходят через барьер с дедлайном;
+ * - вход новичка и подвисание барьер не поднимают;
+ * - готовность засчитывается только для текущей ревизии (appliedRev);
+ * - якорь с запасом: max(300 мс, наибольший RTT + 200 мс).
  */
 import { LIMITS } from "@watch-together/shared";
 import type {
   ClientMessage,
   ErrorCode,
   PeerId,
+  PeerPresence,
   Peer,
   Playback,
+  Presence,
   RoomId,
   ServerMessage,
   SourceInfo,
@@ -20,22 +31,31 @@ import type {
 
 export interface RoomConfig {
   maxPeers: number;
+  /** Сколько барьер ждёт отстающих, мс. */
+  barrierTimeoutMs: number;
   /** Наименьший запас до якоря, мс. */
   minLeadMs: number;
   /** Добавка к наибольшему RTT: на обработку и планирование запуска, мс. */
   leadExtraMs: number;
+  /** Сколько видео впереди должно лежать в буфере, чтобы считаться готовым, мс. */
+  readyBufferMs: number;
 }
 
 export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   maxPeers: LIMITS.maxPeers,
+  barrierTimeoutMs: 10_000,
   minLeadMs: 300,
   leadExtraMs: 200,
+  readyBufferMs: 2_000,
 };
 /** Что хочет участник: play, pause или seek с позицией. */
 export type PlaybackIntent = Extract<
   ClientMessage,
   { type: "playback:intent" }
 >["payload"];
+
+/** Почему держим старт: ждём буфер после запуска или после перемотки. */
+type HoldReason = "buffering" | "seeking";
 
 /** Исходящее сообщение: кому и что. */
 export interface Outbound {
@@ -51,13 +71,21 @@ interface Member {
   name: string;
   sessionToken: string;
   connection: Peer["connection"];
+  /** null — отчёта о готовности ещё не было. */
+  presence: Presence | null;
 }
 
+interface Barrier {
+  waitingFor: Set<PeerId>;
+  deadline: number;
+  reason: HoldReason;
+}
 export class Room {
   readonly id: RoomId;
   readonly config: RoomConfig;
   private readonly members = new Map<PeerId, Member>();
   private state: Playback;
+  private barrier: Barrier | null = null;
   private source: SourceInfo | null = null;
 
   constructor(id: RoomId, now: number, config: Partial<RoomConfig> = {}) {
@@ -82,6 +110,10 @@ export class Room {
     return { ...this.state };
   }
 
+  get waitingFor(): PeerId[] {
+    return this.barrier ? [...this.barrier.waitingFor] : [];
+  }
+
   /** Где головка должна быть в момент now. */
   positionAt(now: number): number {
     const s = this.state;
@@ -99,6 +131,7 @@ export class Room {
       name,
       sessionToken,
       connection: "online",
+      presence: null,
     };
     this.members.set(peerId, member);
     // вход не трогает воспроизведение: новичок сам перемотается к комнате
@@ -112,10 +145,11 @@ export class Room {
     ];
   }
 
-  leave(peerId: PeerId): Outbound[] {
+  leave(peerId: PeerId, now: number): Outbound[] {
     if (!this.members.delete(peerId)) return [];
     return [
       { to: "all", msg: { type: "room:peer_left", payload: { peerId } } },
+      ...this.release(now),
     ];
   }
 
@@ -129,10 +163,11 @@ export class Room {
         if (status !== "paused") {
           return [];
         }
-        return this.start(this.state.positionMs, peerId, now);
+        return this.start(this.state.positionMs, peerId, "buffering", now);
       }
       case "pause": {
         if (status === "paused") return [];
+        this.barrier = null;
         return this.commit({
           status: "paused",
           // на waiting positionAt вернёт позицию, куда собирались
@@ -152,9 +187,37 @@ export class Room {
             setBy: peerId,
           });
         }
-        return this.start(positionMs, peerId, now);
+        return this.start(positionMs, peerId, "seeking", now);
       }
     }
+  }
+
+  presence(peerId: PeerId, presence: Presence, now: number): Outbound[] {
+    const member = this.members.get(peerId);
+    if (!member) return [];
+    member.presence = presence;
+    return this.release(now);
+  }
+
+  /** Адаптер зовёт регулярно: истёк ли дедлайн барьера. */
+  tick(now: number): Outbound[] {
+    if (!this.barrier || now < this.barrier.deadline) return [];
+    // не дождались: стартуем без отставших, они догонят сами
+    return this.startPlaying(this.state.positionMs, this.state.setBy, now);
+  }
+  /** Готовность всех, кто уже отчитался, — адаптер рассылает раз в секунду. */
+  presenceSync(): Outbound {
+    const peers: PeerPresence[] = [];
+    for (const m of this.members.values()) {
+      if (m.presence) {
+        peers.push({
+          ...m.presence,
+          peerId: m.peerId,
+          connection: m.connection,
+        });
+      }
+    }
+    return { to: "all", msg: { type: "presence:sync", payload: { peers } } };
   }
 
   // ─── внутреннее ───────────────────────────────────────────────────
@@ -179,7 +242,10 @@ export class Room {
   }
   /** Запас до якоря: команда должна дойти до самого медленного. */
   private leadMs(): number {
-    const maxRtt = 0;
+    let maxRtt = 0;
+    for (const m of this.members.values()) {
+      if (m.presence) maxRtt = Math.max(maxRtt, m.presence.rttMs);
+    }
     return Math.max(
       this.config.minLeadMs,
       Math.round(maxRtt + this.config.leadExtraMs),
@@ -197,9 +263,10 @@ export class Room {
   }
   private startPlaying(
     positionMs: number,
-    setBy: PeerId,
+    setBy: PeerId | null,
     now: number,
   ): Outbound[] {
+    this.barrier = null;
     return this.commit({
       status: "playing",
       positionMs,
@@ -207,14 +274,89 @@ export class Room {
       setBy,
     });
   } /** Запуск: сначала waiting, потом playing  */
-  private start(positionMs: number, setBy: PeerId, now: number): Outbound[] {
+  /** Запуск через барьер: waiting, удержание, потом playing. */
+  private start(
+    positionMs: number,
+    setBy: PeerId,
+    reason: HoldReason,
+    now: number,
+  ): Outbound[] {
     const out = this.commit({
       status: "waiting",
       positionMs,
       anchorServerTime: now,
       setBy,
     });
-    return [...out, ...this.startPlaying(positionMs, setBy, now)];
+    const waitingFor = new Set(
+      [...this.members.values()]
+        .filter((m) => this.holds(m))
+        .map((m) => m.peerId),
+    );
+    // ждать некого: ни у кого нет файла
+    if (waitingFor.size === 0) {
+      return [...out, ...this.startPlaying(positionMs, setBy, now)];
+    }
+    this.barrier = {
+      waitingFor,
+      deadline: now + this.config.barrierTimeoutMs,
+      reason,
+    };
+    return [...out, this.hold(this.barrier)];
+  }
+
+  /** Вычеркнуть готовых и ушедших; если ждать больше некого — старт. */
+  private release(now: number): Outbound[] {
+    const barrier = this.barrier;
+    if (!barrier) return [];
+    const before = barrier.waitingFor.size;
+    // копия: удаляем из множества, по которому идём
+    for (const peerId of [...barrier.waitingFor]) {
+      const m = this.members.get(peerId);
+      if (!m || !this.holds(m) || this.isReady(m)) {
+        barrier.waitingFor.delete(peerId);
+      }
+    }
+    if (barrier.waitingFor.size === 0) {
+      return this.startPlaying(this.state.positionMs, this.state.setBy, now);
+    }
+    // список ожидания сократился — пусть интерфейс покажет, кого ещё ждём
+    return barrier.waitingFor.size < before ? [this.hold(barrier)] : [];
+  }
+
+  private hold(barrier: Barrier): Outbound {
+    return {
+      to: "all",
+      msg: {
+        type: "playback:hold",
+        payload: {
+          rev: this.state.rev,
+          waitingFor: [...barrier.waitingFor],
+          reason: barrier.reason,
+          deadline: barrier.deadline,
+        },
+      },
+    };
+  }
+
+  /** Держит ли участник старт: наблюдатель без файла комнату не держит. */
+  private holds(m: Member): boolean {
+    return m.presence?.hasSource === true;
+  }
+
+  private isReady(m: Member): boolean {
+    const p = m.presence;
+    return (
+      p !== null &&
+      // готов к текущей ревизии, а не к той, что была до перемотки
+      p.appliedRev >= this.state.rev &&
+      p.hasSource &&
+      p.readyState >= 3 &&
+      p.bufferedAheadMs >= this.requiredBufferMs()
+    );
+  }
+
+  private requiredBufferMs(): number {
+    return this.config.readyBufferMs;
   }
 }
 
