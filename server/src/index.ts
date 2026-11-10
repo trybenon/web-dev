@@ -1,3 +1,4 @@
+import { attachWebSocketGateway } from "./ws-gateway.js";
 import { createAppServer } from "./app.js";
 
 const host = process.env.HOST ?? "127.0.0.1";
@@ -8,6 +9,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const server = createAppServer();
+attachWebSocketGateway(server);
 
 server.listen(port, host, () => {
   console.log(`Server: http://${host}:${port}`);
