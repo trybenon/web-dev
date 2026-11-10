@@ -398,6 +398,22 @@ describe("Room: источник", () => {
     });
   });
 
+  it("после выхода участника его сверки нет у новичка", () => {
+    const room = roomWith(2);
+    room.proposeSource("p1", offer, 0);
+    room.matchSource("p1", 1, true);
+    room.matchSource("p2", 1, true);
+    room.leave("p2", 0);
+    const out = room.join("p3", "P3", "token-3");
+    expect(out[1]).toMatchObject({
+      to: "p3",
+      msg: {
+        type: "source:state",
+        payload: { checks: [{ peerId: "p1", ok: true }] },
+      },
+    });
+  });
+
   it("перемотка на паузе не уходит дальше конца фильма", () => {
     const room = roomWith(1);
     room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);

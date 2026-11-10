@@ -168,6 +168,8 @@ export class Room {
 
   leave(peerId: PeerId, now: number): Outbound[] {
     if (!this.members.delete(peerId)) return [];
+    // сверка ушедшего больше ни о ком не говорит: новичок её видеть не должен
+    this.checks = this.checks.filter((c) => c.peerId !== peerId);
     return [
       { to: "all", msg: { type: "room:peer_left", payload: { peerId } } },
       ...this.release(now),
