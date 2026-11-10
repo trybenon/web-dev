@@ -195,14 +195,14 @@ export class Room {
         return this.commit({
           status: "paused",
           // на waiting positionAt вернёт позицию, куда собирались
-          positionMs: Math.round(this.positionAt(now)),
+          positionMs: this.clampPosition(this.positionAt(now)),
           anchorServerTime: now,
           setBy: peerId,
         });
       }
 
       case "seek": {
-        const positionMs = Math.round(intent.positionMs);
+        const positionMs = this.clampPosition(intent.positionMs);
         if (status === "paused") {
           return this.commit({
             status: "paused",
@@ -302,6 +302,13 @@ export class Room {
     if (this.source) out.push({ to: member.peerId, msg: this.sourceState() });
     return out;
   }
+  /** Позиция в пределах фильма: дальше конца не перемотать и не уехать. */
+  private clampPosition(ms: number): number {
+    // длительность неизвестна — ограничивать нечем
+    const end = this.source?.durationMs ?? Infinity;
+    return Math.round(Math.min(ms, end));
+  }
+
   /** Запас до якоря: команда должна дойти до самого медленного. */
   private leadMs(): number {
     let maxRtt = 0;

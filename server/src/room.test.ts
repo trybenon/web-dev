@@ -387,6 +387,33 @@ describe("Room: источник", () => {
     });
   });
 
+  it("перемотка на паузе не уходит дальше конца фильма", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.intent("p1", { action: "seek", positionMs: 120_000 }, 1_000);
+    expect(room.playback).toMatchObject({
+      status: "paused",
+      positionMs: 60_000,
+    });
+  });
+
+  it("перемотка во время игры тоже упирается в конец фильма", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.intent("p1", { action: "play" }, 0);
+    expect(room.playback.status).toBe("playing");
+    room.intent("p1", { action: "seek", positionMs: 120_000 }, 1_000);
+    expect(room.playback.positionMs).toBe(60_000);
+  });
+
+  it("пауза после конца фильма ставит головку на конец", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.intent("p1", { action: "play" }, 0);
+    room.intent("p1", { action: "pause" }, 90_000);
+    expect(room.playback.positionMs).toBe(60_000);
+  });
+
   it("у конца ролика не требует буфера больше оставшегося", () => {
     const room = roomWith(1);
     room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
