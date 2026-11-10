@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@sentry/vue": "^10.78.0",
     "@watch-together/shared": "file:../shared",
     "element-plus": "^2.14.7",
     "pinia": "^4.1.0",

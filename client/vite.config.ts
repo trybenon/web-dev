@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    sourcemap: true,
+  },
   resolve: {
     alias: {
       "@watch-together/shared": fileURLToPath(

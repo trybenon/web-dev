@@ -16,6 +16,7 @@
     "typescript": "~6.0.2"
   },
   "dependencies": {
+    "@sentry/core": "^10.78.0",
     "zod": "^4.6.7"
   }
 }
