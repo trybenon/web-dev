@@ -38,6 +38,13 @@ export function serveStaticFile(
     return;
   }
 
+  if (decodedPath.split("/").includes("..")) {
+    response.writeHead(403, {
+      "Content-Type": "text/plain; charset=utf-8",
+    });
+    response.end("Forbidden");
+    return;
+  }
   const rootPath = fileURLToPath(directory);
   const filePath = resolve(rootPath, `.${decodedPath}`);
   const relativePath = relative(rootPath, filePath);
