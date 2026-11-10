@@ -66,6 +66,17 @@ afterAll(async () => {
 });
 
 describe("HTTP server", () => {
+  it("rejects access to the video through an asset traversal path", async () => {
+    const response = await fetch(`${baseUrl}/assets/..%2fmedia%2fdemo.webm`);
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden");
+
+    const healthResponse = await fetch(`${baseUrl}/api/health`);
+
+    expect(healthResponse.status).toBe(200);
+    expect(await healthResponse.json()).toEqual({ status: "ok" });
+  });
   it("returns an unknown file type as binary data", async () => {
     const response = await fetch(`${baseUrl}/assets/example.bin`);
 
