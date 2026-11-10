@@ -1,4 +1,4 @@
-import { performance } from "node:perf_hooks";
+import { serverNow } from "./clock.js";
 
 export interface RateLimitOptions {
   limit?: number;
@@ -9,7 +9,7 @@ export interface RateLimitOptions {
 export function createRateLimiter({
   limit = 30,
   windowMs = 1000,
-  now = () => performance.now(),
+  now = serverNow,
 }: RateLimitOptions = {}) {
   let windowStartedAt = now();
   let messagesInWindow = 0;

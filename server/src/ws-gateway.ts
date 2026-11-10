@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
-import { performance } from "node:perf_hooks";
+import { serverNow } from "./clock.js";
 import { WebSocket, WebSocketServer } from "ws";
 import { createRateLimiter, type RateLimitOptions } from "./rate-limit.js";
 import {
@@ -8,6 +8,7 @@ import {
   parseClientMessage,
   type ClientMessage,
   type ServerMessage,
+  type RoomId,
 } from "@watch-together/shared";
 
 function sendMessage(socket: WebSocket, message: ServerMessage) {
@@ -20,17 +21,21 @@ export type GatewayMessage = Exclude<ClientMessage, { type: "sync:ping" }>;
 
 export interface GatewayClient {
   readonly connectionId: string;
-  readonly roomId: string | null;
-
+  readonly roomId: RoomId | null;
+  close(code?: number, reason?: string): void;
   send(message: ServerMessage): void;
-  joinRoom(roomId: string): void;
+  joinRoom(roomId: RoomId): void;
   leaveRoom(): void;
   broadcast(message: ServerMessage): void;
 }
 interface GatewayOptions {
   rateLimit?: RateLimitOptions;
   heartbeatIntervalMs?: number;
-  onMessage?: (client: GatewayClient, message: GatewayMessage) => void;
+  onMessage?: (
+    client: GatewayClient,
+    message: GatewayMessage,
+  ) => void | Promise<void>;
+  onClose?: (client: GatewayClient) => void | Promise<void>;
 }
 export function attachWebSocketGateway(
   server: Server,
@@ -43,6 +48,13 @@ export function attachWebSocketGateway(
     perMessageDeflate: false,
   });
   const connections = new Map<WebSocket, GatewayClient>();
+  function broadcastToRoom(targetRoomId: RoomId, message: ServerMessage): void {
+    for (const recipient of connections.values()) {
+      if (recipient.roomId === targetRoomId) {
+        recipient.send(message);
+      }
+    }
+  }
   const alive = new WeakSet<WebSocket>();
 
   const heartbeat = setInterval(() => {
@@ -72,7 +84,7 @@ export function attachWebSocketGateway(
   });
 
   gateway.on("connection", (socket) => {
-    let roomId: string | null = null;
+    let roomId: RoomId | null = null;
 
     const client: GatewayClient = {
       connectionId: randomUUID(),
@@ -83,6 +95,11 @@ export function attachWebSocketGateway(
 
       send(message) {
         sendMessage(socket, message);
+      },
+      close(code = 1000, reason = "") {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close(code, reason);
+        }
       },
 
       joinRoom(nextRoomId) {
@@ -96,25 +113,32 @@ export function attachWebSocketGateway(
       leaveRoom() {
         roomId = null;
       },
-
       broadcast(message) {
         if (roomId === null || socket.readyState !== WebSocket.OPEN) {
           return;
         }
 
-        for (const recipient of connections.values()) {
-          if (recipient.roomId === roomId) {
-            recipient.send(message);
-          }
-        }
+        broadcastToRoom(roomId, message);
       },
     };
 
     connections.set(socket, client);
 
     socket.once("close", () => {
-      client.leaveRoom();
-      connections.delete(socket);
+      const reportCloseError = (error: unknown) => {
+        console.error("WebSocket close handler error:", error);
+      };
+
+      try {
+        const pending = options.onClose?.(client);
+
+        Promise.resolve(pending).catch(reportCloseError);
+      } catch (error) {
+        reportCloseError(error);
+      } finally {
+        client.leaveRoom();
+        connections.delete(socket);
+      }
     });
     alive.add(socket);
 
@@ -127,7 +151,7 @@ export function attachWebSocketGateway(
     });
 
     socket.on("message", (data, isBinary) => {
-      const receivedAt = performance.now();
+      const receivedAt = serverNow();
       const decision = checkRate();
 
       if (!decision.allowed) {
@@ -176,7 +200,7 @@ export function attachWebSocketGateway(
           payload: {
             t0: message.payload.t0,
             t1: receivedAt,
-            t2: performance.now(),
+            t2: serverNow(),
           },
         });
         return;
@@ -203,14 +227,25 @@ export function attachWebSocketGateway(
       } else if (isRoomEntry) {
         return;
       }
-      try {
-        options.onMessage?.(client, message);
-      } catch (error) {
+      const fail = (error: unknown) => {
         console.error("WebSocket message handler error:", error);
-        socket.close(1011, "Message handler failed");
+
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close(1011, "Message handler failed");
+        }
+      };
+
+      try {
+        const pending = options.onMessage?.(client, message);
+
+        Promise.resolve(pending).catch(fail);
+      } catch (error) {
+        fail(error);
       }
     });
   });
 
-  return gateway;
+  return Object.assign(gateway, {
+    broadcastToRoom,
+  });
 }

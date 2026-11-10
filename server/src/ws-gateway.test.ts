@@ -22,16 +22,21 @@ let rateTime: number;
 
 const clients = new Set<WebSocket>();
 const onMessage =
-  vi.fn<(client: GatewayClient, message: GatewayMessage) => void>();
+  vi.fn<
+    (client: GatewayClient, message: GatewayMessage) => void | Promise<void>
+  >();
+const onClose = vi.fn<(client: GatewayClient) => void | Promise<void>>();
 
 beforeEach(async () => {
   onMessage.mockReset();
+  onClose.mockReset();
   rateTime = 0;
 
   server = createAppServer();
 
   gateway = attachWebSocketGateway(server, {
     onMessage,
+    onClose,
     heartbeatIntervalMs: 100,
     rateLimit: {
       limit: 3,
@@ -167,6 +172,214 @@ const roomBroadcast: ServerMessage = {
   },
 };
 describe("WebSocket gateway", () => {
+  it("broadcasts from the gateway only to the selected room", async () => {
+    onMessage.mockImplementation(acknowledgeMessage);
+
+    const first = await connectWithContext();
+    const otherRoom = await connectWithContext();
+    const outside = await connectWithContext();
+
+    first.context.joinRoom("room-a");
+    otherRoom.context.joinRoom("room-b");
+
+    const firstReceived = observeRoomBroadcasts(first.socket);
+    const otherReceived = observeRoomBroadcasts(otherRoom.socket);
+    const outsideReceived = observeRoomBroadcasts(outside.socket);
+
+    gateway.broadcastToRoom("room-a", roomBroadcast);
+
+    await Promise.all([
+      exchange(first.socket, ping(1)),
+      exchange(otherRoom.socket, ping(2)),
+      exchange(outside.socket, ping(3)),
+    ]);
+
+    expect(firstReceived).toHaveBeenCalledExactlyOnceWith(roomBroadcast);
+    expect(otherReceived).not.toHaveBeenCalled();
+    expect(outsideReceived).not.toHaveBeenCalled();
+  });
+  it("broadcasts from the gateway after a room participant disconnects", async () => {
+    onMessage.mockImplementation(acknowledgeMessage);
+
+    const departed = await connectWithContext();
+    const remaining = await connectWithContext();
+    const otherRoom = await connectWithContext();
+
+    departed.context.joinRoom("room-a");
+    remaining.context.joinRoom("room-a");
+    otherRoom.context.joinRoom("room-b");
+
+    const remainingReceived = observeRoomBroadcasts(remaining.socket);
+    const otherReceived = observeRoomBroadcasts(otherRoom.socket);
+
+    const closed = once(departed.socket, "close");
+    departed.socket.close();
+    await closed;
+
+    await vi.waitFor(() => {
+      expect(departed.context.roomId).toBeNull();
+    });
+
+    gateway.broadcastToRoom("room-a", roomBroadcast);
+
+    await Promise.all([
+      exchange(remaining.socket, ping(1)),
+      exchange(otherRoom.socket, ping(2)),
+    ]);
+
+    expect(remainingReceived).toHaveBeenCalledExactlyOnceWith(roomBroadcast);
+    expect(otherReceived).not.toHaveBeenCalled();
+  });
+  it.each([
+    {
+      code: undefined,
+      reason: undefined,
+      expectedCode: 1000,
+      expectedReason: "",
+    },
+    {
+      code: 4001,
+      reason: "Session replaced",
+      expectedCode: 4001,
+      expectedReason: "Session replaced",
+    },
+  ])(
+    "closes a client from server code with code $expectedCode",
+    async ({ code, reason, expectedCode, expectedReason }) => {
+      onMessage.mockImplementation(acknowledgeMessage);
+
+      const { socket, context } = await connectWithContext();
+
+      context.joinRoom("room-a");
+
+      const closed = once(socket, "close");
+
+      context.close(code, reason);
+      context.close(code, reason);
+
+      const [receivedCode, receivedReason] = await closed;
+
+      expect(receivedCode).toBe(expectedCode);
+      expect(receivedReason.toString()).toBe(expectedReason);
+
+      await vi.waitFor(() => {
+        expect(onClose).toHaveBeenCalledTimes(1);
+        expect(context.roomId).toBeNull();
+      });
+
+      const anotherClient = await connectClient();
+      const response = await exchange(anotherClient, ping(123));
+
+      expect(response).toMatchObject({
+        type: "sync:pong",
+        payload: {
+          t0: 123,
+        },
+      });
+    },
+  );
+  it("notifies the close handler before clearing room membership", async () => {
+    onMessage.mockImplementation(acknowledgeMessage);
+
+    const { socket, context } = await connectWithContext();
+
+    context.joinRoom("room-a");
+
+    let roomAtClose: string | null = null;
+
+    onClose.mockImplementation((client) => {
+      roomAtClose = client.roomId;
+    });
+
+    const closed = once(socket, "close");
+    socket.close();
+    await closed;
+
+    await vi.waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(context.roomId).toBeNull();
+    });
+
+    expect(onClose).toHaveBeenCalledWith(context);
+    expect(roomAtClose).toBe("room-a");
+  });
+  it.each(["sync", "async"] as const)(
+    "cleans up after a %s close handler error and keeps serving clients",
+    async (mode) => {
+      onMessage.mockImplementation(acknowledgeMessage);
+
+      const { socket, context } = await connectWithContext();
+
+      context.joinRoom("room-a");
+
+      const failure = new Error("Test close handler failure");
+
+      onClose.mockImplementation(() => {
+        if (mode === "async") {
+          return Promise.reject(failure);
+        }
+
+        throw failure;
+      });
+
+      const closed = once(socket, "close");
+      socket.close();
+      await closed;
+
+      await vi.waitFor(() => {
+        expect(onClose).toHaveBeenCalledTimes(1);
+        expect(context.roomId).toBeNull();
+      });
+
+      const anotherClient = await connectClient();
+      const response = await exchange(anotherClient, ping(123));
+
+      expect(response).toMatchObject({
+        type: "sync:pong",
+        payload: {
+          t0: 123,
+        },
+      });
+    },
+  );
+  it.each(["sync", "async"] as const)(
+    "closes the affected connection after a %s handler error and keeps serving clients",
+    async (mode) => {
+      const failure = new Error("Test handler failure");
+
+      onMessage.mockImplementation(() => {
+        if (mode === "async") {
+          return Promise.reject(failure);
+        }
+
+        throw failure;
+      });
+
+      const client = await connectClient();
+      const closed = once(client, "close");
+
+      client.send(JSON.stringify(clientExamples.roomCreate));
+
+      const [code, reason] = await closed;
+
+      expect(code).toBe(1011);
+      expect(reason.toString()).toBe("Message handler failed");
+
+      const anotherClient = await connectClient();
+
+      const response = await exchange(
+        anotherClient,
+        JSON.stringify(clientExamples.syncPing),
+      );
+
+      expect(response).toMatchObject({
+        type: "sync:pong",
+        payload: {
+          t0: clientExamples.syncPing.payload.t0,
+        },
+      });
+    },
+  );
   it.each(invalidClientMessages)(
     "rejects a shared invalid example: $why",
     async ({ data }) => {
