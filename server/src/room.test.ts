@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { Room, type Outbound } from "./room.js";
 import { clientExamples, type Presence } from "@watch-together/shared";
 
-
-
 /** Типы сообщений по порядку — так проще сравнивать. */
 const types = (out: Outbound[]): string[] => out.map((o) => o.msg.type);
 
@@ -36,7 +34,7 @@ describe("Room: начальное состояние", () => {
     const room = new Room("r", 1_000);
     expect(room.playback).toEqual({
       rev: 0,
-      status: 'paused',
+      status: "paused",
       positionMs: 0,
       anchorServerTime: 1_000,
       rate: 1,
@@ -371,5 +369,50 @@ describe("Room: источник", () => {
     const near = ready(room.playback.rev, { bufferedAheadMs: 900 });
     expect(types(room.presence("p1", near, 100))).toEqual(["playback:state"]);
     expect(room.playback.status).toBe("playing");
+  });
+});
+
+describe("Room: обрыв связи", () => {
+  it("обрыв: место держим, статус reconnecting, барьер больше не ждёт", () => {
+    const room = roomWith(2);
+    room.presence("p1", ready(0), 0);
+    room.presence("p2", ready(0), 0);
+    room.intent("p1", { action: "play" }, 1_000);
+    room.presence("p1", ready(room.playback.rev), 1_100);
+
+    const out = room.disconnect("p2", 1_200);
+    expect(types(out)).toEqual(["presence:sync", "playback:state"]);
+    expect(out[0]).toMatchObject({
+      msg: {
+        payload: { peers: [{}, { peerId: "p2", connection: "reconnecting" }] },
+      },
+    });
+    expect(room.size).toBe(2);
+    expect(room.playback.status).toBe("playing");
+  });
+
+  it("возвращение: снова online и свежий снимок с тем же токеном", () => {
+    const room = roomWith(2);
+    room.disconnect("p2", 0);
+    const out = room.reconnect("p2");
+    expect(types(out)).toEqual(["room:state", "presence:sync"]);
+    expect(out[0]).toMatchObject({
+      to: "p2",
+      msg: {
+        payload: {
+          you: "p2",
+          sessionToken: "token-2",
+          peers: [{}, { peerId: "p2", connection: "online" }],
+        },
+      },
+    });
+  });
+
+  it("повторный обрыв и обрыв незнакомца ничего не делают", () => {
+    const room = roomWith(1);
+    room.disconnect("p1", 0);
+    expect(room.disconnect("p1", 0)).toEqual([]);
+    expect(room.disconnect("x", 0)).toEqual([]);
+    expect(room.reconnect("x")).toEqual([]);
   });
 });

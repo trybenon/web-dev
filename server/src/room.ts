@@ -29,7 +29,6 @@ import type {
   SourceOffer,
 } from "@watch-together/shared";
 
-
 export interface RoomConfig {
   maxPeers: number;
   /** Сколько барьер ждёт отстающих, мс. */
@@ -157,6 +156,25 @@ export class Room {
       { to: "all", msg: { type: "room:peer_left", payload: { peerId } } },
       ...this.release(now),
     ];
+  }
+
+  /**
+   * Соединение оборвалось: место держим, барьер этого участника больше
+   * не ждёт. Через 30 с без возвращения адаптер зовёт leave.
+   */
+  disconnect(peerId: PeerId, now: number): Outbound[] {
+    const member = this.members.get(peerId);
+    if (!member || member.connection === "reconnecting") return [];
+    member.connection = "reconnecting";
+    return [this.presenceSync(), ...this.release(now)];
+  }
+
+  /** Вернулся с токеном: снова на связи и получает свежий снимок. */
+  reconnect(peerId: PeerId): Outbound[] {
+    const member = this.members.get(peerId);
+    if (!member) return [];
+    member.connection = "online";
+    return [...this.snapshot(member), this.presenceSync()];
   }
 
   intent(peerId: PeerId, intent: PlaybackIntent, now: number): Outbound[] {
@@ -391,7 +409,7 @@ export class Room {
 
   /** Держит ли участник старт: наблюдатель без файла комнату не держит. */
   private holds(m: Member): boolean {
-    return m.presence?.hasSource === true;
+    return m.connection === "online" && m.presence?.hasSource === true;
   }
 
   private isReady(m: Member): boolean {
@@ -418,9 +436,8 @@ export class Room {
   }
 }
 
-
-function toPeer(m: Member): Peer{
-  return {peerId: m.peerId, name: m.name, connection: m.connection};
+function toPeer(m: Member): Peer {
+  return { peerId: m.peerId, name: m.name, connection: m.connection };
 }
 
 function error(to: PeerId, code: ErrorCode, message: string): Outbound {
