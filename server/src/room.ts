@@ -7,6 +7,7 @@
  */
 import { LIMITS } from "@watch-together/shared";
 import type {
+  ClientMessage,
   ErrorCode,
   PeerId,
   Peer,
@@ -16,13 +17,25 @@ import type {
   SourceInfo,
 } from "@watch-together/shared";
 
+
 export interface RoomConfig {
   maxPeers: number;
+  /** Наименьший запас до якоря, мс. */
+  minLeadMs: number;
+  /** Добавка к наибольшему RTT: на обработку и планирование запуска, мс. */
+  leadExtraMs: number;
 }
 
 export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   maxPeers: LIMITS.maxPeers,
+  minLeadMs: 300,
+  leadExtraMs: 200,
 };
+/** Что хочет участник: play, pause или seek с позицией. */
+export type PlaybackIntent = Extract<
+  ClientMessage,
+  { type: "playback:intent" }
+>["payload"];
 
 /** Исходящее сообщение: кому и что. */
 export interface Outbound {
@@ -106,8 +119,46 @@ export class Room {
     ];
   }
 
+  intent(peerId: PeerId, intent: PlaybackIntent, now: number): Outbound[] {
+    if (!this.members.has(peerId)) {
+      return [error(peerId, "not_joined", "Сначала войдите в комнату")];
+    }
+    const status = this.state.status;
+    switch (intent.action) {
+      case "play": {
+        if (status !== "paused") {
+          return [];
+        }
+        return this.start(this.state.positionMs, peerId, now);
+      }
+      case "pause": {
+        if (status === "paused") return [];
+        return this.commit({
+          status: "paused",
+          // на waiting positionAt вернёт позицию, куда собирались
+          positionMs: Math.round(this.positionAt(now)),
+          anchorServerTime: now,
+          setBy: peerId,
+        });
+      }
+
+      case "seek": {
+        const positionMs = Math.round(intent.positionMs);
+        if (status === "paused") {
+          return this.commit({
+            status: "paused",
+            positionMs,
+            anchorServerTime: now,
+            setBy: peerId,
+          });
+        }
+        return this.start(positionMs, peerId, now);
+      }
+    }
+  }
+
   // ─── внутреннее ───────────────────────────────────────────────────
-  private snapshot(member: Member): Outbound[]{
+  private snapshot(member: Member): Outbound[] {
     const out: Outbound[] = [
       {
         to: member.peerId,
@@ -126,7 +177,47 @@ export class Room {
     ];
     return out;
   }
+  /** Запас до якоря: команда должна дойти до самого медленного. */
+  private leadMs(): number {
+    const maxRtt = 0;
+    return Math.max(
+      this.config.minLeadMs,
+      Math.round(maxRtt + this.config.leadExtraMs),
+    );
+  }
+  /** Любое изменение воспроизведения — новая ревизия и рассылка всем. */
+  private commit(changes: Omit<Playback, "rev" | "rate">): Outbound[] {
+    this.state = { ...this.state, ...changes, rev: this.state.rev + 1 };
+    return [
+      {
+        to: "all",
+        msg: { type: "playback:state", payload: this.playback },
+      },
+    ];
+  }
+  private startPlaying(
+    positionMs: number,
+    setBy: PeerId,
+    now: number,
+  ): Outbound[] {
+    return this.commit({
+      status: "playing",
+      positionMs,
+      anchorServerTime: now + this.leadMs(),
+      setBy,
+    });
+  } /** Запуск: сначала waiting, потом playing  */
+  private start(positionMs: number, setBy: PeerId, now: number): Outbound[] {
+    const out = this.commit({
+      status: "waiting",
+      positionMs,
+      anchorServerTime: now,
+      setBy,
+    });
+    return [...out, ...this.startPlaying(positionMs, setBy, now)];
+  }
 }
+
 
 function toPeer(m: Member): Peer{
   return {peerId: m.peerId, name: m.name, connection: m.connection};

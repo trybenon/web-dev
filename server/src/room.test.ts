@@ -85,3 +85,80 @@ describe("Room: вход и выход", () => {
     expect(room.leave("x")).toEqual([]);
   });
 });
+
+describe("Room: намерения", () => {
+  it("намерение не участника — not_joined", () => {
+    const out = new Room("r", 0).intent("x", { action: "play" }, 0);
+    expect(out).toMatchObject([
+      { to: "x", msg: { type: "error", payload: { code: "not_joined" } } },
+    ]);
+  });
+
+  it("если файла нет ни у кого, запуск без ожидания: waiting, потом playing", () => {
+    const room = roomWith(2);
+    const out = room.intent("p1", { action: "play" }, 1_000);
+    expect(types(out)).toEqual(["playback:state", "playback:state"]);
+    expect(out).toMatchObject([
+      { msg: { payload: { rev: 1, status: "waiting" } } },
+      { msg: { payload: { rev: 2, status: "playing" } } },
+    ]);
+    // якорь не раньше чем через 300 мс
+    expect(room.playback).toMatchObject({
+      anchorServerTime: 1_300,
+      setBy: "p1",
+    });
+  });
+
+  it("пауза во время игры запоминает позицию по якорю", () => {
+    const room = roomWith(1);
+    room.intent("p1", { action: "play" }, 0); // якорь 300
+    expect(room.positionAt(1_300)).toBe(1_000);
+    room.intent("p1", { action: "pause" }, 1_300);
+    expect(room.playback).toMatchObject({
+      status: "paused",
+      positionMs: 1_000,
+      anchorServerTime: 1_300,
+    });
+  });
+
+  it("до якоря позиция стоит", () => {
+    const room = roomWith(1);
+    room.intent("p1", { action: "play" }, 0);
+    expect(room.positionAt(100)).toBe(0);
+  });
+
+  it("перемотка на паузе просто сдвигает позицию", () => {
+    const room = roomWith(1);
+    room.intent("p1", { action: "seek", positionMs: 5_000 }, 0);
+    expect(room.playback).toMatchObject({
+      rev: 1,
+      status: "paused",
+      positionMs: 5_000,
+    });
+  });
+
+  it("повторные play и pause ничего не меняют", () => {
+    const room = roomWith(1);
+    expect(room.intent("p1", { action: "pause" }, 0)).toEqual([]);
+    room.intent("p1", { action: "play" }, 1_000);
+    expect(room.intent("p1", { action: "play" }, 2_000)).toEqual([]);
+  });
+
+  it("каждое изменение увеличивает rev", () => {
+    const room = roomWith(1);
+    const revs = [room.playback.rev];
+    room.intent("p1", { action: "seek", positionMs: 100 }, 0);
+    revs.push(room.playback.rev);
+    room.intent("p1", { action: "play" }, 1_000);
+    revs.push(room.playback.rev);
+    expect(revs).toEqual([0, 1, 3]); // play: waiting (2) → playing (3)
+  });
+
+  it("вход посреди просмотра не трогает воспроизведение", () => {
+    const room = roomWith(1);
+    room.intent("p1", { action: "play" }, 0);
+    const before = room.playback;
+    room.join("p2", "P2", "token-2");
+    expect(room.playback).toEqual(before);
+  });
+});
