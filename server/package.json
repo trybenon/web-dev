@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@sentry/node": "^10.78.0",
-    "@watch-together/shared": "file:../shared"
+    "@watch-together/shared": "file:../shared",
+    "ws": "^8.22.2"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "~6.0.2"
   }

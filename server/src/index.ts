@@ -1,3 +1,4 @@
+import { attachWebSocketGateway } from "./ws-gateway.js";
 import { createAppServer } from "./app.js";
 import * as Sentry from "@sentry/node";
 import { sanitizeErrorEvent } from "@watch-together/shared";
@@ -14,8 +15,16 @@ if (dsn) {
   });
 }
 
-const server = createAppServer();
+const host = process.env.HOST ?? "127.0.0.1";
+const port = Number(process.env.PORT ?? "3000");
 
-server.listen(3000, "127.0.0.1", () => {
-  console.log("Server: http://127.0.0.1:3000");
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error("PORT должен быть целым числом от 1 до 65535");
+}
+
+const server = createAppServer();
+attachWebSocketGateway(server);
+
+server.listen(port, host, () => {
+  console.log(`Server: http://${host}:${port}`);
 });
