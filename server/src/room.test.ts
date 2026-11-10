@@ -1,13 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { Room, type Outbound } from "./room.js";
-import { clientExamples, type Presence } from "@watch-together/shared";
+import {
+  clientExamples,
+  ServerMessageSchema,
+  type Presence,
+} from "@watch-together/shared";
 
 /** Типы сообщений по порядку — так проще сравнивать. */
 const types = (out: Outbound[]): string[] => out.map((o) => o.msg.type);
 
+/**
+ * Комната для тестов. Каждое сообщение, которое вернул её метод,
+ * проверяется схемой протокола: не прошло — тест падает с разбором zod.
+ */
+function newRoom(now = 0): Room {
+  return new Proxy(new Room("r", now), {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        const result: unknown = value.apply(target, args);
+        for (const item of [result].flat()) {
+          if (isOutbound(item)) ServerMessageSchema.parse(item.msg);
+        }
+        return result;
+      };
+    },
+  });
+}
+
+function isOutbound(item: unknown): item is Outbound {
+  return typeof item === "object" && item !== null && "msg" in item;
+}
+
 /** Комната с участниками p1…pn, создана в момент 0. */
 function roomWith(n: number): Room {
-  const room = new Room("r", 0);
+  const room = newRoom();
   for (let i = 1; i <= n; i++) room.join(`p${i}`, `P${i}`, `token-${i}`);
   return room;
 }
@@ -31,7 +59,7 @@ const offer = clientExamples.sourcePropose.payload;
 
 describe("Room: начальное состояние", () => {
   it("новая комната на паузе в начале, якорь - момент создания", () => {
-    const room = new Room("r", 1_000);
+    const room = newRoom(1_000);
     expect(room.playback).toEqual({
       rev: 0,
       status: "paused",
@@ -42,18 +70,18 @@ describe("Room: начальное состояние", () => {
     });
   });
   it("playback отдает копию, снаружи состояние не поменять", () => {
-    const room = new Room("r", 0);
+    const room = newRoom(0);
     room.playback.positionMs = 99;
     expect(room.playback.positionMs).toBe(0);
   });
   it("на паузе позиция стоит", () => {
-    expect(new Room("r", 0).positionAt(60_000)).toBe(0);
+    expect(newRoom(0).positionAt(60_000)).toBe(0);
   });
 });
 
 describe("Room: вход и выход", () => {
   it("новичок получает снимок, остальные — уведомление", () => {
-    const room = new Room("r", 0);
+    const room = newRoom(0);
     room.join("a", "Аня", "token-a");
     const out = room.join("b", "Боря", "token-b");
     expect(types(out)).toEqual(["room:state", "room:peer_joined"]);
@@ -105,7 +133,7 @@ describe("Room: вход и выход", () => {
 
 describe("Room: намерения", () => {
   it("намерение не участника — not_joined", () => {
-    const out = new Room("r", 0).intent("x", { action: "play" }, 0);
+    const out = newRoom(0).intent("x", { action: "play" }, 0);
     expect(out).toMatchObject([
       { to: "x", msg: { type: "error", payload: { code: "not_joined" } } },
     ]);
@@ -251,7 +279,7 @@ describe("Room: барьер готовности", () => {
   });
 
   it("отчёт незнакомца игнорируется", () => {
-    expect(new Room("r", 0).presence("x", ready(0), 0)).toEqual([]);
+    expect(newRoom(0).presence("x", ready(0), 0)).toEqual([]);
   });
 
   it("пауза во время ожидания снимает барьер и оставляет позицию", () => {
@@ -338,7 +366,7 @@ describe("Room: источник", () => {
   });
 
   it("источник от незнакомца — not_joined", () => {
-    const room = new Room("r", 0);
+    const room = newRoom(0);
     expect(types(room.proposeSource("x", offer, 0))).toEqual(["error"]);
     expect(types(room.matchSource("x", 1, true))).toEqual(["error"]);
   });
