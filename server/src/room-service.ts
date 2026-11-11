@@ -137,7 +137,7 @@ export class RoomService {
         }
         this.attach(session, client);
         this.publish(room, room.reconnect(session.peerId));
-        oldClient?.close(1000, "Session replaced");
+        oldClient?.close(4001, "Session replaced");
       } else {
         // Неизвестный или истёкший токен: обычный вход с новой личностью.
         this.add(room, name, client);
