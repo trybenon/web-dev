@@ -1,3 +1,4 @@
+import { RoomService } from "./room-service.js";
 import { attachWebSocketGateway } from "./ws-gateway.js";
 import { createAppServer } from "./app.js";
 import * as Sentry from "@sentry/node";
@@ -23,8 +24,29 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const server = createAppServer();
+const rooms = new RoomService();
+
 attachWebSocketGateway(server, {
+  onMessage: rooms.onMessage,
+  onClose: rooms.onClose,
   onHandlerError: dsn ? Sentry.captureException : undefined,
+});
+
+const roomTick = setInterval(() => {
+  rooms.tick();
+}, 100);
+
+const presenceSync = setInterval(() => {
+  rooms.syncPresence();
+}, 1_000);
+
+roomTick.unref();
+presenceSync.unref();
+
+server.once("close", () => {
+  clearInterval(roomTick);
+  clearInterval(presenceSync);
+  rooms.dispose();
 });
 
 server.listen(port, host, () => {
