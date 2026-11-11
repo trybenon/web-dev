@@ -521,3 +521,43 @@ describe("Room: обрыв связи", () => {
     expect(room.reconnect("x")).toEqual([]);
   });
 });
+
+describe("Room: снимок во время ожидания", () => {
+  it.each(["join", "reconnect"] as const)(
+    "%s передаёт текущее удержание лично, после состояния и источника",
+    (operation) => {
+      const room = roomWith(1);
+      room.proposeSource("p1", offer, 0);
+      room.presence("p1", ready(0), 0);
+      const started = room.intent("p1", { action: "play" }, 1_000);
+      const hold = started.find((item) => item.msg.type === "playback:hold");
+      if (!hold) throw new Error("Expected hold");
+      const before = room.playback;
+      const waitingFor = room.waitingFor;
+
+      const out =
+        operation === "join"
+          ? room.join("p2", "P2", "token-2")
+          : room.reconnect("p1");
+      const recipient = operation === "join" ? "p2" : "p1";
+      const personal = out.filter((item) => item.to === recipient);
+
+      expect(types(personal)).toEqual([
+        "room:state",
+        "source:state",
+        "playback:hold",
+      ]);
+      expect(personal[2]).toEqual({ to: recipient, msg: hold.msg });
+      expect(
+        out.some(
+          (item) => item.to === "all" && item.msg.type === "playback:hold",
+        ),
+      ).toBe(false);
+      expect(room.playback).toEqual(before);
+      expect(room.waitingFor).toEqual(waitingFor);
+      // Дедлайн исходного удержания не сдвигается при получении снимка.
+      expect(room.tick(10_999)).toEqual([]);
+      expect(types(room.tick(11_000))).toEqual(["playback:state"]);
+    },
+  );
+});

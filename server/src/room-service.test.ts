@@ -494,4 +494,70 @@ describe("RoomService", () => {
     service.dispose();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each(["join", "replace", "resume"] as const)(
+    "delivers the current hold on %s without restarting the barrier",
+    (operation) => {
+      const first = create();
+      const original = state(first);
+      const second = client("second");
+      service.onMessage(second, {
+        type: "room:join",
+        payload: { roomId: original.roomId, name: "Second" },
+      });
+      const secondState = state(second);
+      for (const participant of [first, second]) {
+        service.onMessage(participant, {
+          type: "presence:update",
+          payload: {
+            ...clientExamples.presenceUpdate.payload,
+            appliedRev: 0,
+            readyState: 0,
+            bufferedAheadMs: 0,
+          },
+        });
+      }
+      service.onMessage(first, {
+        type: "playback:intent",
+        payload: { action: "play" },
+      });
+      if (operation === "resume") service.onClose(second);
+      const hold = first.messages.findLast((m) => m.type === "playback:hold");
+      if (hold?.type !== "playback:hold") throw new Error("Expected hold");
+      vi.advanceTimersByTime(1_000);
+      const incoming = client("incoming");
+      const existing = operation === "replace" ? original : secondState;
+      service.onMessage(incoming, {
+        type: "room:join",
+        payload: {
+          roomId: original.roomId,
+          name: "Incoming",
+          ...(operation === "join"
+            ? {}
+            : { sessionToken: existing.sessionToken }),
+        },
+      });
+      expect(state(incoming).playback.status).toBe("waiting");
+      expect(incoming.messages.find((m) => m.type === "playback:hold")).toEqual(
+        hold,
+      );
+      expect(
+        incoming.messages.findIndex((m) => m.type === "room:state"),
+      ).toBeLessThan(
+        incoming.messages.findIndex((m) => m.type === "playback:hold"),
+      );
+      if (operation === "join") {
+        expect(state(incoming).you).not.toBe(original.you);
+        expect(state(incoming).you).not.toBe(secondState.you);
+      } else {
+        expect(state(incoming).you).toBe(existing.you);
+      }
+      vi.advanceTimersByTime(9_000);
+      service.tick();
+      expect(incoming.messages.at(-1)).toMatchObject({
+        type: "playback:state",
+        payload: { status: "playing" },
+      });
+    },
+  );
 });

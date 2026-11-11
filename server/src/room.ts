@@ -316,6 +316,11 @@ export class Room {
     ];
     // в room:state сверок нет: новичку их отдельным сообщением
     if (this.source) out.push({ to: member.peerId, msg: this.sourceState() });
+    // Передаём существующее удержание только этому подключению.
+    // Срок, ревизия и список ожидания комнаты остаются прежними.
+    if (this.barrier) {
+      out.push({ ...this.hold(this.barrier), to: member.peerId });
+    }
     return out;
   }
   /** Позиция в пределах фильма: дальше конца не перемотать и не уехать. */
