@@ -6,6 +6,8 @@ import { Room, type Outbound } from "./room.js";
 import { deliverRoomMessages } from "./room-delivery.js";
 import type { GatewayClient, GatewayMessage } from "./ws-gateway.js";
 
+const RECONNECT_GRACE_MS = 30_000;
+
 interface Session {
   roomId: RoomId;
   peerId: PeerId;
@@ -59,24 +61,6 @@ export class RoomService {
     this.sessions.set(session.token, session);
     this.attach(session, client);
     this.publish(room, messages);
-    // До первого отчёта считаем, что участник ещё не выбрал видео.
-    this.publish(
-      room,
-      room.presence(
-        session.peerId,
-        {
-          readyState: 0,
-          bufferedAheadMs: 0,
-          playerState: "paused",
-          hasSource: false,
-          deviationMs: null,
-          deviationAt: this.now(),
-          appliedRev: -1,
-          rttMs: 0,
-        },
-        this.now(),
-      ),
-    );
     this.publish(room, [room.presenceSync()]);
   }
 
@@ -199,12 +183,12 @@ export class RoomService {
     this.connections.delete(client.connectionId);
     this.recipients.delete(session.peerId);
     session.client = null;
-    session.expiresAt = this.now() + 30_000;
+    session.expiresAt = this.now() + RECONNECT_GRACE_MS;
     const room = this.rooms.get(session.roomId);
     if (room) this.publish(room, room.disconnect(session.peerId, this.now()));
     session.timer = setTimeout(() => {
       if (session.client === null) this.remove(session);
-    }, 30_000);
+    }, RECONNECT_GRACE_MS);
     session.timer.unref();
   };
 
