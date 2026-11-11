@@ -30,6 +30,9 @@ export default defineConfig({
         "**/*.test.ts",
         "**/*.d.ts",
         "client/src/main.ts",
+        // служебная страница и оболочка воркера проверяются e2e-тестом
+        "client/src/dev/**",
+        "client/src/sync/sync.worker.ts",
         "server/src/index.ts",
         "shared/src/index.ts",
       ],

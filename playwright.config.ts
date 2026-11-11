@@ -17,10 +17,20 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "npm run dev --workspace=client -- --host 127.0.0.1 --port 4173",
-    url: "http://127.0.0.1:4173",
-    reuseExistingServer: false,
-    timeout: 30000,
-  },
+  webServer: [
+    {
+      // сервер комнат: без него страница синхронизации не подключится
+      command:
+        "npm run build --workspace=shared && npm run dev --workspace=server",
+      url: "http://127.0.0.1:3000/api/health",
+      reuseExistingServer: false,
+      timeout: 60000,
+    },
+    {
+      command: "npm run dev --workspace=client -- --host 127.0.0.1 --port 4173",
+      url: "http://127.0.0.1:4173",
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+  ],
 });

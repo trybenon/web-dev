@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Проверка синхронизации</title>
+    <style>
+      body {
+        margin: 16px;
+        max-width: 960px;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      video {
+        width: 100%;
+        background: #000;
+      }
+      pre {
+        padding: 8px;
+        background: #f2f2f2;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Проверка синхронизации</h1>
+    <p>
+      Служебная страница для #5. Откройте её в двух окнах с одним и тем же
+      файлом: создайте комнату в одном, войдите по ссылке в другом.
+    </p>
+    <div class="row">
+      <input id="name" value="Гость" aria-label="Имя" />
+      <button id="create">Создать комнату</button>
+      <input id="room" placeholder="id комнаты" aria-label="id комнаты" />
+      <button id="join">Войти</button>
+      <button id="leave">Выйти</button>
+    </div>
+    <div class="row">
+      <label>Свой файл: <input id="file" type="file" accept="video/*" /></label>
+      <button id="demo">Деморолик</button>
+    </div>
+    <video id="video" playsinline preload="auto"></video>
+    <div class="row">
+      <button id="play">Играть</button>
+      <button id="pause">Пауза</button>
+      <button id="back">−10 с</button>
+      <button id="forward">+10 с</button>
+    </div>
+    <p><a id="link"></a></p>
+    <pre id="status"></pre>
+    <ul id="log"></ul>
+    <script type="module" src="/src/dev/sync-test.ts"></script>
+  </body>
+</html>

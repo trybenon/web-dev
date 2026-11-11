@@ -3,10 +3,10 @@ import { clientExamples, serverExamples } from "@watch-together/shared";
 import {
   createStubPlayerBridge,
   createStubSyncClient,
-  positionAt,
   STUB_ROOM_IDS,
   type VideoLike,
 } from "./stub";
+import { positionAt } from "./timeline";
 import type { SyncClient, SyncError, SyncState } from "./types";
 
 const LATENCY = 100;
@@ -238,16 +238,6 @@ describe("воспроизведение", () => {
     const playback = state().playback;
     expect(playback && positionAt(playback, client.serverNow())).toBe(
       serverExamples.roomState.payload.playback.positionMs + 2_000,
-    );
-  });
-
-  it("positionAt: на паузе позиция стоит, при игре идёт со скоростью", () => {
-    const playing = serverExamples.playbackState.payload;
-    expect(positionAt(playing, playing.anchorServerTime + 1_000)).toBe(
-      playing.positionMs + 1_000,
-    );
-    expect(positionAt({ ...playing, status: "paused" }, 0)).toBe(
-      playing.positionMs,
     );
   });
 });
