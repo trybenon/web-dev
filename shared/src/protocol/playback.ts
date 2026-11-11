@@ -14,6 +14,7 @@ export const PlaybackSchema = z.object({
   /** В момент anchorServerTime головка должна стоять в positionMs. */
   positionMs: MsSchema,
   anchorServerTime: ServerTimeSchema,
+  /**Скорость воспроизведения, не связана с ускорением дорожки при синхронизации.*/
   rate: z.number().positive(),
   /** Кто вызвал изменение; null — начальное состояние, никто ещё не менял. */
   setBy: PeerIdSchema.nullable(),
