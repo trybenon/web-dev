@@ -705,6 +705,7 @@ export class SyncEngine {
     const clocks = this.clocks();
     if (!clocks || playback?.status !== "playing") return;
     if (playback.rev !== this.commandRev || isBusy(this.media)) return;
+    if (this.fileMismatch()) return;
     const { atWorker, errorMs } = errorAt(playback, positionMs, atMain, clocks);
     // до старта и в первые мгновения после него ошибка ничего не значит
     if (atWorker < this.startAt + SAMPLES_AFTER_START_MS) return;
@@ -719,8 +720,9 @@ export class SyncEngine {
     if (!clocks || playback?.status !== "playing" || !this.playerAttached) {
       return;
     }
-    // без файла подстраивать нечего
-    if (!this.media?.hasSource) return;
+    // без файла или с чужим файлом подстраивать не к чему — по той же
+    // причине отклонение в отчёте null (protocol.md, «Присутствие»)
+    if (!this.media?.hasSource || this.fileMismatch()) return;
     if (playback.rev !== this.commandRev || now < this.startAt) return;
     // кадров нет (вкладка в фоне или браузер без rVFC): спрашиваем позицию сами
     if (now - this.lastFrameAt > FRAMES_STALE_MS) {

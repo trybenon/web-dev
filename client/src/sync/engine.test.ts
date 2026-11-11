@@ -974,6 +974,29 @@ describe("SyncEngine: контур подстройки", () => {
     expect(framesUntilDecision(5)).toEqual([{ kind: "rate", rate: 1 }]);
   });
 
+  it("файл не совпал с источником комнаты — контур плеер не трогает", () => {
+    startPlaying();
+    const source = serverExamples.sourceState.payload.source;
+    socket().receive({
+      type: "source:state",
+      payload: { source, checks: [{ peerId: "peer-petya", ok: false }] },
+    });
+    const before = sampleRequests();
+    vi.advanceTimersByTime(1_000); // кадров нет, но и спрашивать незачем
+    expect(sampleRequests()).toBe(before);
+    expect(framesUntilDecision(900, 1_000)).toEqual([]);
+    // сверка прошла: замеры с чужим файлом не в счёт, контур снова работает
+    socket().receive({
+      type: "source:state",
+      payload: { source, checks: [{ peerId: "peer-petya", ok: true }] },
+    });
+    expect(framesUntilDecision(0, 300)).toEqual([]);
+    expect(framesUntilDecision(900).map((c) => c.kind)).toEqual([
+      "rate",
+      "seek",
+    ]);
+  });
+
   it("вкладка вернулась на экран — секунду не измеряет", () => {
     startPlaying();
     engine.handle({ type: "player:visible" });
