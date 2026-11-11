@@ -33,6 +33,8 @@ export interface PlayerChannel {
   report(media: MediaReport): void;
   applied(rev: number): void;
   reload(): void;
+  sample(positionMs: number, atMain: number, frame: boolean): void;
+  visible(): void;
 }
 
 const channels = new WeakMap<SyncClient, PlayerChannel>();
@@ -159,6 +161,9 @@ export function createSyncClient(options: SyncClientOptions = {}): SyncClient {
     report: (media) => send({ type: "player:media", media }),
     applied: (rev) => send({ type: "player:applied", rev }),
     reload: () => send({ type: "player:reload" }),
+    sample: (positionMs, atMain, frame) =>
+      send({ type: "player:sample", positionMs, atMain, frame }),
+    visible: () => send({ type: "player:visible" }),
   });
   return client;
 }

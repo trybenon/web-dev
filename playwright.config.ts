@@ -27,10 +27,13 @@ export default defineConfig({
       timeout: 60000,
     },
     {
-      command: "npm run dev --workspace=client -- --host 127.0.0.1 --port 4173",
+      // собранный клиент, как в продакшене, плюс страница проверки синхронизации;
+      // /api и /ws vite preview пересылает серверу, как и в разработке
+      command:
+        "npm run build:e2e --workspace=client && npm run preview:e2e --workspace=client",
       url: "http://127.0.0.1:4173",
       reuseExistingServer: false,
-      timeout: 30000,
+      timeout: 120000,
     },
   ],
 });
