@@ -190,13 +190,15 @@ export class DriftController {
       return { kind: "none" };
     }
     this.decayThrash(now);
+    // Тишина кончилась: продолжаем с того режима, который оставила скорость.
+    // Иначе после hold при скорости 1.02 и малой ошибке контур ушёл бы
+    // в idle, так и не вернув скорость к 1.
+    if (this.mode === "suspended" || this.mode === "cooldown") {
+      this.mode = this.rate === 1 ? "idle" : "rate";
+    }
 
     const e = this.filtered(now);
-    if (e === null) {
-      if (this.mode === "suspended" || this.mode === "cooldown")
-        this.mode = this.rate === 1 ? "idle" : "rate";
-      return { kind: "none" };
-    }
+    if (e === null) return { kind: "none" };
 
     // Первое измерение после старта или перемотки показывает промах:
     // подстраиваем опережение для следующего раза.

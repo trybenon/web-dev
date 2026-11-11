@@ -960,6 +960,20 @@ describe("SyncEngine: контур подстройки", () => {
     ]);
   });
 
+  it("после буферизации плеер догнал комнату — скорость возвращается к 1", () => {
+    startPlaying();
+    expect(framesUntilDecision(100)).toEqual([{ kind: "rate", rate: 1.02 }]);
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "buffering" }),
+    });
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing" }),
+    });
+    expect(framesUntilDecision(5)).toEqual([{ kind: "rate", rate: 1 }]);
+  });
+
   it("вкладка вернулась на экран — секунду не измеряет", () => {
     startPlaying();
     engine.handle({ type: "player:visible" });

@@ -235,4 +235,29 @@ describe("DriftController: hold", () => {
     c.hold(1100, 200);
     expect(c.snapshot(1100).rate).toBe(1.02);
   });
+
+  it("после паузы с малой ошибкой возвращает скорость к 1, а не застревает", () => {
+    const c = new DriftController();
+    expect(feed(c, 1000, 100)).toEqual({ kind: "rate", rate: 1.02 });
+    c.hold(1100, 500); // буферизация или возврат вкладки
+    // пока стояли, плеер догнал комнату: ошибка ниже порога выхода
+    expect(feed(c, 1800, 5)).toEqual({ kind: "rate", rate: 1 });
+    expect(c.snapshot(1800).mode).toBe("idle");
+  });
+
+  it("после паузы с ошибкой между порогами продолжает подстройку", () => {
+    const c = new DriftController();
+    feed(c, 1000, 100); // 1.02
+    c.hold(1100, 500);
+    // 20 мс: войти в подстройку мало, а выйти из неё — рано
+    expect(feed(c, 2200, 20)).toEqual({ kind: "rate", rate: 1.004 });
+    expect(c.snapshot(2200).mode).toBe("rate");
+  });
+
+  it("после паузы при скорости 1 и малой ошибке ничего не делает", () => {
+    const c = new DriftController();
+    c.hold(0, 500);
+    expect(feed(c, 1000, 20)).toEqual({ kind: "none" });
+    expect(c.snapshot(1000).mode).toBe("idle");
+  });
 });
