@@ -345,6 +345,33 @@ describe("SyncEngine: комната", () => {
     expect(socket().ofType("room:join")).toHaveLength(2);
   });
 
+  it("вход с пустым id не уходит на сервер и не мешает войти снова", () => {
+    connect();
+    engine.handle({ type: "joinRoom", roomId: "", name: "Аня" });
+    expect(socket().ofType("room:join")).toHaveLength(0);
+    expect(posted).toContainEqual({
+      type: "error",
+      error: {
+        code: "invalid_message",
+        message: "Вход не прошёл проверку: payload.roomId",
+      },
+    });
+    engine.handle({ type: "createRoom", name: "  Аня " });
+    expect(socket().ofType("room:create")).toEqual([
+      { type: "room:create", payload: { name: "Аня" } },
+    ]);
+  });
+
+  it("сервер выбросил вход (invalid_message, rate_limited) — можно войти снова", () => {
+    connect();
+    for (const code of ["invalid_message", "rate_limited"] as const) {
+      engine.handle({ type: "createRoom", name: "Аня" });
+      socket().receive({ type: "error", payload: { code, message: code } });
+    }
+    engine.handle({ type: "createRoom", name: "Аня" });
+    expect(socket().ofType("room:create")).toHaveLength(3);
+  });
+
   it("участники входят, выходят и присылают отчёты", () => {
     connect();
     joinExample();

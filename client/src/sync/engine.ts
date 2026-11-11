@@ -8,6 +8,7 @@
  * sync.worker.ts.
  */
 import {
+  ClientMessageSchema,
   parseServerMessage,
   type ClientMessage,
   type Playback,
@@ -460,6 +461,14 @@ export class SyncEngine {
         this.clearRoom();
         this.emit();
       }
+    } else if (
+      error.code === "invalid_message" ||
+      error.code === "rate_limited"
+    ) {
+      // сервер мог выбросить и запрос на вход, ничего на него не ответив:
+      // не ждём вечно, даём войти снова
+      this.entryPending = false;
+      this.entryMessage = null;
     }
     this.post({ type: "error", error });
   }
@@ -469,9 +478,23 @@ export class SyncEngine {
   private enter(message: ClientMessage): void {
     // как на сервере: повторный вход из комнаты не делает ничего
     if (this.room || this.entryPending) return;
+    // та же схема, что на сервере: неверный вход (пустой id, пустое имя)
+    // не уходит и не оставляет нас ждать ответа
+    const checked = ClientMessageSchema.safeParse(message);
+    if (!checked.success) {
+      const fields = checked.error.issues.map((i) => i.path.join("."));
+      this.post({
+        type: "error",
+        error: {
+          code: "invalid_message",
+          message: `Вход не прошёл проверку: ${fields.join(", ")}`,
+        },
+      });
+      return;
+    }
     this.entryPending = true;
-    this.entryMessage = message;
-    this.send(message);
+    this.entryMessage = checked.data;
+    this.send(checked.data);
   }
 
   private leave(): void {
