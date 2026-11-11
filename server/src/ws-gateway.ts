@@ -36,6 +36,7 @@ interface GatewayOptions {
     message: GatewayMessage,
   ) => void | Promise<void>;
   onClose?: (client: GatewayClient) => void | Promise<void>;
+  onHandlerError?: (error: unknown) => void;
 }
 export function attachWebSocketGateway(
   server: Server,
@@ -48,6 +49,20 @@ export function attachWebSocketGateway(
     perMessageDeflate: false,
   });
   const connections = new Map<WebSocket, GatewayClient>();
+
+  function reportHandlerError(message: string, error: unknown): void {
+    console.error(message, error);
+
+    try {
+      options.onHandlerError?.(error);
+    } catch (reportingError) {
+      console.error(
+        "WebSocket handler error reporting failed:",
+        reportingError,
+      );
+    }
+  }
+
   function broadcastToRoom(targetRoomId: RoomId, message: ServerMessage): void {
     for (const recipient of connections.values()) {
       if (recipient.roomId === targetRoomId) {
@@ -126,7 +141,7 @@ export function attachWebSocketGateway(
 
     socket.once("close", () => {
       const reportCloseError = (error: unknown) => {
-        console.error("WebSocket close handler error:", error);
+        reportHandlerError("WebSocket close handler error:", error);
       };
 
       try {
@@ -228,7 +243,7 @@ export function attachWebSocketGateway(
         return;
       }
       const fail = (error: unknown) => {
-        console.error("WebSocket message handler error:", error);
+        reportHandlerError("WebSocket message handler error:", error);
 
         if (socket.readyState === WebSocket.OPEN) {
           socket.close(1011, "Message handler failed");

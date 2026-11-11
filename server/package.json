@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@sentry/node": "^10.78.0",
     "@watch-together/shared": "file:../shared",
     "ws": "^8.22.2"
   },

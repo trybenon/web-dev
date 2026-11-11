@@ -1,6 +1,20 @@
 import { RoomService } from "./room-service.js";
 import { attachWebSocketGateway } from "./ws-gateway.js";
 import { createAppServer } from "./app.js";
+import * as Sentry from "@sentry/node";
+import { sanitizeErrorEvent } from "@watch-together/shared";
+
+const dsn = process.env.BUGSINK_DSN;
+
+if (dsn) {
+  Sentry.init({
+    dsn,
+    environment: process.env.NODE_ENV ?? "development",
+    release: process.env.APP_RELEASE,
+    sendDefaultPii: false,
+    beforeSend: sanitizeErrorEvent,
+  });
+}
 
 const host = process.env.HOST ?? "127.0.0.1";
 const port = Number(process.env.PORT ?? "3000");
@@ -15,6 +29,7 @@ const rooms = new RoomService();
 attachWebSocketGateway(server, {
   onMessage: rooms.onMessage,
   onClose: rooms.onClose,
+  onHandlerError: dsn ? Sentry.captureException : undefined,
 });
 
 const roomTick = setInterval(() => {
