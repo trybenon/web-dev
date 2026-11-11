@@ -1,11 +1,10 @@
 /**
  * Точка входа синхронизации для интерфейса: импортируйте отсюда.
  *
- * Пока воркера нет (#5), createSyncClient и createPlayerBridge — заглушки.
- * Настоящая реализация заменит их здесь же, интерфейс останется прежним.
+ * createSyncClient и createPlayerBridge — настоящие: воркер, сервер, часы.
+ * Заглушки остаются для тестов интерфейса и работы без сервера;
+ * их мост работает только с заглушкой, а настоящий — только с настоящим клиентом.
  */
-import { createStubPlayerBridge, createStubSyncClient } from "./stub";
-
 export type {
   ConnectionState,
   HoldView,
@@ -17,7 +16,8 @@ export type {
   SyncError,
   SyncState,
 } from "./types";
-// Заглушки — для тестов интерфейса: они останутся заглушками и после #5.
+export type { SyncClientOptions } from "./client";
+export type { BridgeVideo } from "./player-bridge";
 export type { StubOptions, VideoLike } from "./stub";
 export {
   createStubPlayerBridge,
@@ -25,7 +25,5 @@ export {
   STUB_ROOM_IDS,
 } from "./stub";
 export { positionAt } from "./timeline";
-
-/** Для приложения. Пока воркера нет (#5) — заглушка, потом настоящий клиент. */
-export const createSyncClient = createStubSyncClient;
-export const createPlayerBridge = createStubPlayerBridge;
+export { createSyncClient } from "./client";
+export { createPlayerBridge } from "./player-bridge";

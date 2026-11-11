@@ -7,8 +7,8 @@ import {
 } from "./index";
 
 describe("точка входа", () => {
-  it("пока воркера нет, createSyncClient — это заглушка", () => {
-    expect(createSyncClient).toBe(createStubSyncClient);
-    expect(createPlayerBridge).toBe(createStubPlayerBridge);
+  it("createSyncClient и createPlayerBridge — настоящие, заглушки отдельно", () => {
+    expect(createSyncClient).not.toBe(createStubSyncClient);
+    expect(createPlayerBridge).not.toBe(createStubPlayerBridge);
   });
 });

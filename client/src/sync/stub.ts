@@ -318,8 +318,8 @@ export type VideoLike = Pick<
 >;
 
 /**
- * Наивный мост: ставит video в состояние комнаты без часов и подстройки.
- * Настоящий мост с синхронизацией появится в #5.
+ * Наивный мост для заглушки: ставит video в состояние комнаты без часов
+ * и подстройки. Настоящий — createPlayerBridge в player-bridge.ts.
  */
 export function createStubPlayerBridge(
   client: SyncClient,
