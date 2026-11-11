@@ -467,6 +467,90 @@ describe("SyncEngine: комната", () => {
     expect(state().room).toBeNull();
   });
 
+  it("выход во время возвращения по токену: ответ на возвращение пропускается", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample();
+    engine.handle({ type: "player:media", media: media() });
+    socket().drop();
+    vi.advanceTimersByTime(375);
+    socket().open(); // ушёл room:join с токеном
+    engine.handle({ type: "leaveRoom" });
+    socket().receive(serverExamples.roomState); // ответ на возвращение
+    expect(state().room).toBeNull();
+    answerPings(); // связь есть: уходит отложенный room:leave
+    expect(socket().ofType("room:leave")).toHaveLength(1);
+    vi.advanceTimersByTime(3_000);
+    expect(socket().ofType("presence:update")).toHaveLength(0);
+  });
+
+  it("несколько брошенных входов подряд: все их ответы пропускаются", () => {
+    connect();
+    joinExample();
+    socket().drop();
+    vi.advanceTimersByTime(375);
+    socket().open();
+    answerPings();
+    engine.handle({ type: "leaveRoom" }); // бросили возвращение
+    engine.handle({ type: "createRoom", name: "Петя" });
+    engine.handle({ type: "leaveRoom" }); // и новый вход
+    expect(socket().ofType("room:leave")).toHaveLength(2);
+    socket().receive({
+      type: "error",
+      payload: { code: "room_not_found", message: "Room not found" },
+    });
+    socket().receive(serverExamples.roomState);
+    expect(state().room).toBeNull();
+    expect(posted.some((m) => m.type === "error")).toBe(false);
+    // а ответ на свежий вход уже настоящий
+    engine.handle({ type: "createRoom", name: "Петя" });
+    socket().receive(serverExamples.roomState);
+    expect(state().room?.you).toBe("peer-petya");
+  });
+
+  it("обрыв после выхода: ответов старого сокета больше не ждём", () => {
+    connect();
+    engine.handle({ type: "createRoom", name: "Петя" });
+    engine.handle({ type: "leaveRoom" }); // ответ на вход уже не нужен…
+    socket().drop(); // …и не придёт
+    vi.advanceTimersByTime(375);
+    socket().open();
+    answerPings();
+    engine.handle({ type: "createRoom", name: "Петя" });
+    socket().receive(serverExamples.roomState);
+    expect(state().room?.you).toBe("peer-petya");
+  });
+
+  it("not_joined, пока мы в комнате: верим серверу и выходим из неё", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample();
+    engine.handle({ type: "player:media", media: media() });
+    const notJoined = {
+      code: "not_joined" as const,
+      message: "Join a room first",
+    };
+    socket().receive({ type: "error", payload: notJoined });
+    expect(state().room).toBeNull();
+    expect(posted).toContainEqual({ type: "error", error: notJoined });
+    const reports = socket().ofType("presence:update").length;
+    vi.advanceTimersByTime(3_000);
+    expect(socket().ofType("presence:update")).toHaveLength(reports);
+  });
+
+  it("not_joined во время возвращения по токену комнату не трогает", () => {
+    connect();
+    joinExample();
+    socket().drop();
+    vi.advanceTimersByTime(375);
+    socket().open();
+    socket().receive({
+      type: "error",
+      payload: { code: "not_joined", message: "Join a room first" },
+    });
+    expect(state().room?.roomId).toBe("k7f3q");
+  });
+
   it("выход, пока вход ещё в очереди, ничего не шлёт", () => {
     engine.handle({ type: "connect", url: "ws://test/ws" });
     engine.handle({ type: "joinRoom", roomId: "k7f3q", name: "Петя" });

@@ -109,8 +109,12 @@ export class SyncEngine {
   private entryPending = false;
   /** Сам запрос на вход: если связь оборвётся до ответа, отправим его снова. */
   private entryMessage: ClientMessage | null = null;
-  /** Вышли, не дождавшись ответа на вход: этот room:state уже не нужен. */
-  private skipNextRoomState = false;
+  /**
+   * Сколько ответов ещё придёт на вход и возвращение, от которых мы уже
+   * отказались: вышли, не дождавшись ответа. Сервер отвечает по порядку,
+   * поэтому это всегда самые ранние из ожидаемых ответов.
+   */
+  private staleEntryAnswers = 0;
   /** Вернулись по токену и ждём room:state. */
   private rejoining = false;
   private playback: Playback | null = null;
@@ -267,7 +271,8 @@ export class SyncEngine {
     this.socket = null;
     this.socketOpen = false;
     this.rejoining = false;
-    this.skipNextRoomState = false;
+    // ответы на этот сокет уже не придут
+    this.staleEntryAnswers = 0;
     this.serverClock.stop();
     const entry = this.entryMessage;
     if (this.entryPending && entry && !this.queue.includes(entry)) {
@@ -397,14 +402,15 @@ export class SyncEngine {
   private onRoomState(
     payload: Extract<ServerMessage, { type: "room:state" }>["payload"],
   ): void {
+    if (this.staleEntryAnswers > 0) {
+      // ответ на вход или возвращение, из которого мы уже вышли:
+      // room:leave ушёл следом, и сервер нас уберёт
+      this.staleEntryAnswers -= 1;
+      return;
+    }
     this.entryPending = false;
     this.entryMessage = null;
     this.rejoining = false;
-    if (this.skipNextRoomState) {
-      // вышли раньше, чем пришёл ответ на вход: сервер нас уже убрал
-      this.skipNextRoomState = false;
-      return;
-    }
     const previous = this.room;
     const sameRoom =
       previous?.roomId === payload.roomId && previous.you === payload.you;
@@ -452,10 +458,14 @@ export class SyncEngine {
   ): void {
     const entryFailed =
       error.code === "room_not_found" || error.code === "room_full";
+    if (entryFailed && this.staleEntryAnswers > 0) {
+      // отказ на вход, из которого мы уже вышли: сообщать не о чем
+      this.staleEntryAnswers -= 1;
+      return;
+    }
     if (entryFailed) {
       this.entryPending = false;
       this.entryMessage = null;
-      this.skipNextRoomState = false;
       if (this.rejoining) {
         // место не дождалось нас, а комнату закрыли или заняли
         this.clearRoom();
@@ -469,6 +479,11 @@ export class SyncEngine {
       // не ждём вечно, даём войти снова
       this.entryPending = false;
       this.entryMessage = null;
+    } else if (error.code === "not_joined" && this.room && !this.rejoining) {
+      // сервер нас в комнате не числит, а мы её показываем и раз в секунду
+      // шлём отчёт: верим серверу и выходим из комнаты
+      this.clearRoom();
+      this.emit();
     }
     this.post({ type: "error", error });
   }
@@ -498,7 +513,6 @@ export class SyncEngine {
   }
 
   private leave(): void {
-    const wasEntering = this.entryPending && !this.room;
     if (!this.room && !this.entryPending) return;
     // вход, который ещё не ушёл, просто забываем
     const queuedEntry = this.queue.some(
@@ -508,8 +522,10 @@ export class SyncEngine {
       (m) => m.type !== "room:create" && m.type !== "room:join",
     );
     if (!queuedEntry) {
+      // на ушедший вход или возвращение по токену ответ ещё придёт:
+      // его надо пропустить, иначе он снова покажет комнату
+      if (this.entryPending || this.rejoining) this.staleEntryAnswers += 1;
       this.send({ type: "room:leave", payload: {} });
-      this.skipNextRoomState = wasEntering;
     }
     this.clearRoom();
     this.emit();
