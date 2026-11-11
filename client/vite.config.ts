@@ -2,10 +2,23 @@ import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 
-export default defineConfig({
+const page = (name: string) => fileURLToPath(new URL(name, import.meta.url));
+
+export default defineConfig(({ mode }) => ({
   plugins: [vue()],
   build: {
     sourcemap: true,
+    // e2e-сборка: тот же клиент плюс страница проверки синхронизации.
+    // На домен она не попадает: обычная сборка берёт только index.html
+    ...(mode === "e2e" && {
+      outDir: "dist/e2e",
+      rollupOptions: {
+        input: {
+          main: page("./index.html"),
+          syncTest: page("./sync-test.html"),
+        },
+      },
+    }),
   },
   resolve: {
     alias: {
@@ -25,4 +38,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
