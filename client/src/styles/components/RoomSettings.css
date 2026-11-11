@@ -1,0 +1,88 @@
+.room-settings {
+  min-width: 0;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.room-settings-close {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.room-settings-volume {
+  display: grid;
+  grid-template-columns: auto 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin-block-start: auto;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--border);
+  color: var(--text-h);
+  font-size: 13px;
+}
+
+.room-settings-sound {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+}
+
+.room-settings-sound img {
+  display: block;
+  width: 18px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.room-settings-volume-control {
+  position: relative;
+  min-width: 0;
+  padding-inline: 9px;
+}
+
+.room-settings-volume-slider {
+  --el-slider-height: 2px;
+  --el-slider-main-bg-color: var(--accent);
+  --el-slider-runway-bg-color: var(--accent);
+  --el-slider-button-size: 14px;
+  --el-slider-button-wrapper-offset: -17px;
+  --el-color-white: var(--surface);
+}
+
+.room-settings-volume-guide {
+  position: absolute;
+  inset: 0 9px;
+  pointer-events: none;
+}
+
+.room-settings-volume-tip {
+  position: absolute;
+  inset-block-end: calc(50% + 10px);
+  z-index: 2;
+  padding: 2px 6px;
+  visibility: hidden;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.room-settings-volume-control:hover .room-settings-volume-tip {
+  visibility: visible;
+}

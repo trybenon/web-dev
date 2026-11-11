@@ -8,7 +8,7 @@ test("opens the home page and shows its heading", async ({ page }) => {
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "Совместный просмотр видео",
+      name: "Добро пожаловать!",
       exact: true,
     }),
   ).toBeVisible();
