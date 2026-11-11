@@ -2,8 +2,9 @@
  * Мост между воркером синхронизации и элементом video.
  *
  * Выполняет команды воркера (пауза, подготовка, старт в нужный момент,
- * перемотка) и докладывает, что с плеером: позиция, буфер, готовность.
- * Своей математики синхронизации у моста нет.
+ * перемотка, скорость) и докладывает, что с плеером: позиция, буфер,
+ * готовность. Для контура подстройки шлёт замер позиции с каждого
+ * показанного кадра. Своей математики синхронизации у моста нет.
  *
  * События video никогда не превращаются в команды комнаты (decisions.md, 2.8):
  * иначе пауза, пришедшая от сервера, вернулась бы на сервер как пауза
@@ -13,6 +14,21 @@ import { playerChannel } from "./client";
 import { bufferedAheadMs } from "./timeline";
 import type { PlayerBridge, SyncClient } from "./types";
 import type { MediaReport, PlayerCommand } from "./worker-protocol";
+
+/** Что показано на кадре и когда (requestVideoFrameCallback). */
+export interface FrameInfo {
+  /** Метка кадра в видео, с. */
+  readonly mediaTime: number;
+  /** Когда кадр покажут, по performance.now() страницы. */
+  readonly expectedDisplayTime: number;
+}
+
+/** Документ, в котором живёт video: нужен, чтобы знать, видна ли вкладка. */
+export interface BridgeDocument {
+  readonly visibilityState: string;
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
+}
 
 /** Что мосту нужно от video. HTMLVideoElement подходит как есть. */
 export interface BridgeVideo {
@@ -32,10 +48,14 @@ export interface BridgeVideo {
   pause(): void;
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
+  /** Есть не во всех браузерах: без него воркер сам спрашивает позицию. */
+  requestVideoFrameCallback?(
+    callback: (now: number, frame: FrameInfo) => void,
+  ): number;
+  cancelVideoFrameCallback?(handle: number): void;
+  readonly ownerDocument?: BridgeDocument | null;
 }
 
-/** Насколько раньше якоря вызывать play(): видео трогается не сразу (decisions.md, 4.7). */
-const PLAY_LEAD_MS = 40;
 /** Стоящий плеер: ближе этого, мс, к нужной позиции — не перематываем. */
 const PAUSED_TOLERANCE_MS = 20;
 /** Играющий плеер: перемотка заметна глазу, поэтому допуск шире, мс. */
@@ -80,7 +100,7 @@ export function createPlayerBridge(
   const port = channel;
 
   /** Последняя команда состояния: пауза, подготовка или старт. */
-  let current: Exclude<PlayerCommand, { kind: "seek" }> | null = null;
+  let current: Extract<PlayerCommand, { rev: number }> | null = null;
   /** Ревизия, выполнение которой ещё не подтвердили воркеру. */
   let unconfirmed: number | null = null;
   let playTimer: ReturnType<typeof setTimeout> | undefined;
@@ -102,7 +122,7 @@ export function createPlayerBridge(
     const now = performance.now();
     if (video.paused) {
       // опоздали к якорю — начинаем с того места, где комната будет при старте
-      const lateMs = Math.max(0, now + PLAY_LEAD_MS - command.atMain);
+      const lateMs = Math.max(0, now + command.leadMs - command.atMain);
       seekIfFar(
         command.positionMs + lateMs * command.rate,
         PAUSED_TOLERANCE_MS,
@@ -123,16 +143,27 @@ export function createPlayerBridge(
   }
 
   function execute(command: PlayerCommand): void {
-    if (command.kind === "seek") {
-      video.currentTime = command.positionMs / 1000;
-      report();
-      return;
+    switch (command.kind) {
+      case "seek":
+        video.currentTime = command.positionMs / 1000;
+        report();
+        return;
+      case "rate":
+        if (video.playbackRate !== command.rate) {
+          video.playbackRate = command.rate;
+        }
+        return;
+      case "sample":
+        if (!video.paused) {
+          port.sample(video.currentTime * 1000, performance.now(), false);
+        }
+        return;
     }
     clearTimeout(playTimer);
     current = command;
     unconfirmed = command.rev;
     if (command.kind === "play") {
-      const delay = command.atMain - PLAY_LEAD_MS - performance.now();
+      const delay = command.atMain - command.leadMs - performance.now();
       if (delay > 0) {
         // встаём на позицию заранее, чтобы к старту кадры уже были
         if (video.paused) seekIfFar(command.positionMs, PAUSED_TOLERANCE_MS);
@@ -219,6 +250,26 @@ export function createPlayerBridge(
     video.addEventListener(type, handler);
   }
   const reportTimer = setInterval(update, REPORT_MS);
+
+  // замер с каждого показанного кадра: точная пара «что показано — когда»
+  // (sync-drift.md, «Источник позиции»)
+  let frameHandle: number | undefined;
+  function onFrame(_now: number, frame: FrameInfo): void {
+    if (disposed) return;
+    if (!video.paused) {
+      port.sample(frame.mediaTime * 1000, frame.expectedDisplayTime, true);
+    }
+    frameHandle = video.requestVideoFrameCallback?.(onFrame);
+  }
+  frameHandle = video.requestVideoFrameCallback?.(onFrame);
+
+  // вкладка вернулась из фона: Chrome мог сам перемотать видеодорожку
+  const doc = video.ownerDocument ?? null;
+  function onVisibility(): void {
+    if (doc?.visibilityState === "visible") port.visible();
+  }
+  doc?.addEventListener("visibilitychange", onVisibility);
+
   port.attach(execute);
   report();
 
@@ -244,6 +295,10 @@ export function createPlayerBridge(
       for (const [type, handler] of handlers) {
         video.removeEventListener(type, handler);
       }
+      if (frameHandle !== undefined) {
+        video.cancelVideoFrameCallback?.(frameHandle);
+      }
+      doc?.removeEventListener("visibilitychange", onVisibility);
       port.detach();
     },
   };

@@ -35,16 +35,24 @@ export type PlayerCommand =
   | { kind: "pause"; rev: number; positionMs: number }
   /** Встать на позицию и загрузить кадры: комната ждёт готовности. */
   | { kind: "prepare"; rev: number; positionMs: number }
-  /** В момент atMain головка должна стоять в positionMs и идти со скоростью rate. */
+  /**
+   * В момент atMain головка должна стоять в positionMs и идти со скоростью
+   * rate. play() вызывается на leadMs раньше: видео трогается не сразу.
+   */
   | {
       kind: "play";
       rev: number;
       positionMs: number;
       atMain: number;
       rate: number;
+      leadMs: number;
     }
-  /** Грубая поправка: плеер ушёл от комнаты больше чем на секунду. */
-  | { kind: "seek"; positionMs: number };
+  /** Контур подстройки: перемотать, не меняя ни паузу, ни скорость. */
+  | { kind: "seek"; positionMs: number }
+  /** Контур подстройки: чуть ускорить или замедлить плеер. */
+  | { kind: "rate"; rate: number }
+  /** Кадров давно не было (вкладка в фоне): прислать позицию сейчас. */
+  | { kind: "sample" };
 
 export type ToWorker =
   | { type: "connect"; url: string }
@@ -63,6 +71,18 @@ export type ToWorker =
   | { type: "player:applied"; rev: number }
   /** Плееру нужна команда заново: загрузился другой файл или снят запрет на звук. */
   | { type: "player:reload" }
+  /**
+   * Замер для контура подстройки: на кадре показана позиция positionMs
+   * в момент atMain. frame — замер с показанного кадра, а не по запросу.
+   */
+  | {
+      type: "player:sample";
+      positionMs: number;
+      atMain: number;
+      frame: boolean;
+    }
+  /** Вкладка снова на экране: браузер мог перемотать видео сам. */
+  | { type: "player:visible" }
   | { type: "dispose" };
 
 export type FromWorker =

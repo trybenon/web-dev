@@ -72,6 +72,8 @@ const RESYNC_AFTER_MS = 1_000;
 const RESYNC_COOLDOWN_MS = 3_000;
 /** Перемотка занимает время: целимся на столько вперёд, мс. */
 const RESYNC_LEAD_MS = 200;
+/** Насколько раньше якоря вызывать play(): видео трогается не сразу (decisions.md, 4.7). */
+const START_LEAD_MS = 40;
 /** Сколько команд держим, пока нет связи. */
 const MAX_QUEUE = 50;
 
@@ -613,6 +615,7 @@ export class SyncEngine {
           positionMs: plan.positionMs,
           atMain: plan.atMain,
           rate: playback.rate,
+          leadMs: START_LEAD_MS,
         };
         break;
       }

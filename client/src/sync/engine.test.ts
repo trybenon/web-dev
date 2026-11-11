@@ -635,6 +635,7 @@ describe("SyncEngine: плеер", () => {
         positionMs: 3_000,
         atMain: now() + PAGE + 500,
         rate: 1,
+        leadMs: 40,
       },
     ]);
   });

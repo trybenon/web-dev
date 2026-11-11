@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSyncClient, type WorkerPort } from "./client";
-import { createPlayerBridge, type BridgeVideo } from "./player-bridge";
+import {
+  createPlayerBridge,
+  type BridgeDocument,
+  type BridgeVideo,
+  type FrameInfo,
+} from "./player-bridge";
 import { createStubSyncClient } from "./stub";
 import type { PlayerBridge, SyncClient } from "./types";
 import type {
@@ -9,6 +14,25 @@ import type {
   PlayerCommand,
   ToWorker,
 } from "./worker-protocol";
+
+/** Подделка document: видимость вкладки переключает тест. */
+class FakeDocument implements BridgeDocument {
+  visibilityState = "visible";
+  readonly listeners = new Set<() => void>();
+
+  addEventListener(_type: string, listener: () => void): void {
+    this.listeners.add(listener);
+  }
+
+  removeEventListener(_type: string, listener: () => void): void {
+    this.listeners.delete(listener);
+  }
+
+  setVisible(visible: boolean): void {
+    this.visibilityState = visible ? "visible" : "hidden";
+    for (const listener of this.listeners) listener();
+  }
+}
 
 /** Подделка video: ведёт себя как настоящий, но всё видно и всем можно управлять. */
 class FakeVideo implements BridgeVideo {
@@ -23,7 +47,33 @@ class FakeVideo implements BridgeVideo {
   plays = 0;
   /** Как браузер: play() без клика отклоняется. */
   blocked = false;
+  readonly ownerDocument = new FakeDocument();
+  /** Ждущий следующего кадра обработчик requestVideoFrameCallback. */
+  private frameCallback: ((now: number, frame: FrameInfo) => void) | null =
+    null;
   private readonly listeners = new Map<string, Set<() => void>>();
+
+  requestVideoFrameCallback(
+    callback: (now: number, frame: FrameInfo) => void,
+  ): number {
+    this.frameCallback = callback;
+    return 7;
+  }
+
+  cancelVideoFrameCallback(handle: number): void {
+    if (handle === 7) this.frameCallback = null;
+  }
+
+  /** Браузер показал кадр. */
+  showFrame(mediaTime: number, expectedDisplayTime: number): void {
+    const callback = this.frameCallback;
+    this.frameCallback = null;
+    callback?.(expectedDisplayTime, { mediaTime, expectedDisplayTime });
+  }
+
+  get waitsForFrame(): boolean {
+    return this.frameCallback !== null;
+  }
 
   play(): Promise<void> {
     this.plays += 1;
@@ -157,7 +207,14 @@ describe("createPlayerBridge", () => {
 
   it("старт в будущем: позиция заранее, play() чуть раньше якоря", () => {
     const atMain = performance.now() + 1_000;
-    command({ kind: "play", rev: 5, positionMs: 3_000, atMain, rate: 1 });
+    command({
+      kind: "play",
+      rev: 5,
+      positionMs: 3_000,
+      atMain,
+      rate: 1,
+      leadMs: 40,
+    });
     expect(video.currentTime).toBe(3);
     expect(video.plays).toBe(0);
     expect(applied()).toEqual([5]);
@@ -171,7 +228,14 @@ describe("createPlayerBridge", () => {
 
   it("опоздали к якорю — стартует сразу и догоняет комнату", () => {
     const atMain = performance.now() - 500;
-    command({ kind: "play", rev: 5, positionMs: 3_000, atMain, rate: 1 });
+    command({
+      kind: "play",
+      rev: 5,
+      positionMs: 3_000,
+      atMain,
+      rate: 1,
+      leadMs: 40,
+    });
     expect(video.plays).toBe(1);
     expect(video.currentTime).toBeCloseTo(3.54, 6); // 500 мс опоздания + запас на старт
   });
@@ -180,16 +244,37 @@ describe("createPlayerBridge", () => {
     video.paused = false;
     video.currentTime = 10;
     const atMain = performance.now();
-    command({ kind: "play", rev: 6, positionMs: 10_100, atMain, rate: 1 });
+    command({
+      kind: "play",
+      rev: 6,
+      positionMs: 10_100,
+      atMain,
+      rate: 1,
+      leadMs: 40,
+    });
     expect(video.currentTime).toBe(10);
-    command({ kind: "play", rev: 7, positionMs: 12_000, atMain, rate: 1 });
+    command({
+      kind: "play",
+      rev: 7,
+      positionMs: 12_000,
+      atMain,
+      rate: 1,
+      leadMs: 40,
+    });
     expect(video.currentTime).toBe(12);
     expect(video.plays).toBe(0);
   });
 
   it("новая команда отменяет запланированный старт", () => {
     const atMain = performance.now() + 1_000;
-    command({ kind: "play", rev: 5, positionMs: 0, atMain, rate: 1 });
+    command({
+      kind: "play",
+      rev: 5,
+      positionMs: 0,
+      atMain,
+      rate: 1,
+      leadMs: 40,
+    });
     command({ kind: "pause", rev: 6, positionMs: 0 });
     vi.advanceTimersByTime(2_000);
     expect(video.plays).toBe(0);
@@ -203,6 +288,7 @@ describe("createPlayerBridge", () => {
       positionMs: 0,
       atMain: performance.now(),
       rate: 1,
+      leadMs: 40,
     });
     await Promise.resolve();
     expect(video.paused).toBe(true);
@@ -250,11 +336,84 @@ describe("createPlayerBridge", () => {
     expect(toWorker.some((m) => m.type === "intent")).toBe(false);
   });
 
+  it("опережение старта берёт из команды", () => {
+    const atMain = performance.now() + 1_000;
+    command({
+      kind: "play",
+      rev: 5,
+      positionMs: 0,
+      atMain,
+      rate: 1,
+      leadMs: 100,
+    });
+    vi.advanceTimersByTime(899);
+    expect(video.plays).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(video.plays).toBe(1);
+  });
+
+  it("скорость от контура меняет только скорость", () => {
+    video.paused = false;
+    video.currentTime = 10;
+    command({ kind: "rate", rate: 1.02 });
+    expect(video.playbackRate).toBe(1.02);
+    expect(video.currentTime).toBe(10);
+    expect(video.paused).toBe(false);
+    expect(applied()).toEqual([]);
+  });
+
+  const samples = () =>
+    toWorker.flatMap((m) => (m.type === "player:sample" ? [m] : []));
+
+  it("с каждого показанного кадра шлёт замер, пока видео идёт", () => {
+    expect(video.waitsForFrame).toBe(true);
+    video.showFrame(1.5, 1_234); // на паузе замер не нужен…
+    expect(samples()).toEqual([]);
+    video.paused = false;
+    video.showFrame(1.55, 1_276); // …а в игре — каждый кадр
+    expect(samples()).toEqual([
+      { type: "player:sample", positionMs: 1_550, atMain: 1_276, frame: true },
+    ]);
+    expect(video.waitsForFrame).toBe(true); // ждёт следующий
+  });
+
+  it("по запросу воркера присылает позицию, если видео идёт", () => {
+    command({ kind: "sample" });
+    expect(samples()).toEqual([]);
+    video.paused = false;
+    video.currentTime = 2;
+    command({ kind: "sample" });
+    expect(samples()).toEqual([
+      {
+        type: "player:sample",
+        positionMs: 2_000,
+        atMain: performance.now(),
+        frame: false,
+      },
+    ]);
+  });
+
+  it("вкладка вернулась на экран — сообщает воркеру", () => {
+    video.ownerDocument.setVisible(false);
+    expect(count("player:visible")).toBe(0);
+    video.ownerDocument.setVisible(true);
+    expect(count("player:visible")).toBe(1);
+  });
+
   it("dispose снимает слушатели и таймеры и отключается от воркера", () => {
     const atMain = performance.now() + 1_000;
-    command({ kind: "play", rev: 5, positionMs: 0, atMain, rate: 1 });
+    command({
+      kind: "play",
+      rev: 5,
+      positionMs: 0,
+      atMain,
+      rate: 1,
+      leadMs: 40,
+    });
     bridge.dispose();
     expect(video.listenerCount).toBe(0);
+    expect(video.ownerDocument.listeners.size).toBe(0);
+    expect(video.waitsForFrame).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
     expect(count("player:detach")).toBe(1);
     command({ kind: "pause", rev: 6, positionMs: 0 });

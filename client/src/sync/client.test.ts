@@ -165,6 +165,8 @@ describe("канал к плееру", () => {
     channel.report(media);
     channel.applied(1);
     channel.reload();
+    channel.sample(1_500, 2, true);
+    channel.visible();
     channel.detach();
     fromWorker({
       type: "player:command",
@@ -176,6 +178,8 @@ describe("канал к плееру", () => {
       { type: "player:media", media },
       { type: "player:applied", rev: 1 },
       { type: "player:reload" },
+      { type: "player:sample", positionMs: 1_500, atMain: 2, frame: true },
+      { type: "player:visible" },
       { type: "player:detach" },
     ]);
   });
