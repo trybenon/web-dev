@@ -1,3 +1,4 @@
+import { RoomService } from "./room-service.js";
 import { attachWebSocketGateway } from "./ws-gateway.js";
 import { createAppServer } from "./app.js";
 
@@ -9,7 +10,29 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const server = createAppServer();
-attachWebSocketGateway(server);
+const rooms = new RoomService();
+
+attachWebSocketGateway(server, {
+  onMessage: rooms.onMessage,
+  onClose: rooms.onClose,
+});
+
+const roomTick = setInterval(() => {
+  rooms.tick();
+}, 100);
+
+const presenceSync = setInterval(() => {
+  rooms.syncPresence();
+}, 1_000);
+
+roomTick.unref();
+presenceSync.unref();
+
+server.once("close", () => {
+  clearInterval(roomTick);
+  clearInterval(presenceSync);
+  rooms.dispose();
+});
 
 server.listen(port, host, () => {
   console.log(`Server: http://${host}:${port}`);
