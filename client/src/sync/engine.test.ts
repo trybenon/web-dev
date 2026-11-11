@@ -71,10 +71,19 @@ function state(): SyncState {
   return states[states.length - 1].state;
 }
 
+/** Команды плееру, кроме просьб прислать позицию — их считает sampleRequests. */
 function commands(): PlayerCommand[] {
   return posted.flatMap((m) =>
-    m.type === "player:command" ? [m.command] : [],
+    m.type === "player:command" && m.command.kind !== "sample"
+      ? [m.command]
+      : [],
   );
+}
+
+function sampleRequests(): number {
+  return posted.filter(
+    (m) => m.type === "player:command" && m.command.kind === "sample",
+  ).length;
 }
 
 /** Ответить на все пинги: сервер и страница отвечают мгновенно. */
@@ -144,13 +153,8 @@ function playing(positionMs: number, anchorServerTime: number): Playback {
   };
 }
 
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(0);
-  sockets = [];
-  posted = [];
-  answered = { server: 0, page: 0 };
-  engine = new SyncEngine({
+function makeEngine(userAgent?: string): SyncEngine {
+  return new SyncEngine({
     post: (m) => posted.push(m),
     openSocket: (_url, events) => {
       const s = new FakeSocket(events);
@@ -160,7 +164,17 @@ beforeEach(() => {
     },
     now,
     random: () => 0.5,
+    userAgent,
   });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  sockets = [];
+  posted = [];
+  answered = { server: 0, page: 0 };
+  engine = makeEngine();
 });
 
 afterEach(() => {
@@ -705,7 +719,7 @@ describe("SyncEngine: плеер", () => {
     });
   });
 
-  it("в игре сообщает отклонение, а больше секунды — перематывает", () => {
+  it("в игре сообщает отклонение по отчёту плеера, а сам отчёт ничего не перематывает", () => {
     connect();
     engine.handle({ type: "player:attach" });
     joinExample();
@@ -713,29 +727,23 @@ describe("SyncEngine: плеер", () => {
     socket().receive({ type: "playback:state", payload: playing(0, anchor) });
     vi.advanceTimersByTime(3_500); // прошло 3,3 с игры
     const atMain = now() + PAGE;
+    const last = () => socket().ofType("presence:update").pop()?.payload;
     // плеер показывает 3,2 с вместо 3,3 — отстаёт на 100 мс
     engine.handle({
       type: "player:media",
       media: media({ playerState: "playing", positionMs: 3_200, atMain }),
     });
-    const reports = socket().ofType("presence:update");
-    expect(reports[reports.length - 1].payload).toMatchObject({
+    expect(last()).toMatchObject({
       deviationMs: 100,
       deviationAt: now() + SERVER,
     });
+    // отстал на 2,3 с: в отчёте честно, а перематывает только контур по кадрам
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "buffering", positionMs: 1_000, atMain }),
+    });
+    expect(last()?.deviationMs).toBe(2_300);
     expect(commands().some((c) => c.kind === "seek")).toBe(false);
-    // а теперь отстал на 2,3 с
-    engine.handle({
-      type: "player:media",
-      media: media({ playerState: "playing", positionMs: 1_000, atMain }),
-    });
-    expect(commands().pop()).toEqual({ kind: "seek", positionMs: 3_500 });
-    // второй раз сразу не перематывает
-    engine.handle({
-      type: "player:media",
-      media: media({ playerState: "playing", positionMs: 1_000, atMain }),
-    });
-    expect(commands().filter((c) => c.kind === "seek")).toHaveLength(1);
   });
 
   it("без файла и с несовпавшим файлом отклонение null", () => {
@@ -810,7 +818,7 @@ describe("SyncEngine: плеер", () => {
     expect(last()?.deviationMs).toBe(0);
   });
 
-  it("по старому отчёту не перематывает, но отклонение отдаёт с моментом замера", () => {
+  it("старый отчёт: отклонение уходит с моментом замера", () => {
     connect();
     engine.handle({ type: "player:attach" });
     joinExample();
@@ -827,13 +835,6 @@ describe("SyncEngine: плеер", () => {
       deviationMs: 1_200,
       deviationAt: now() - 2_100 + SERVER,
     });
-    expect(commands().some((c) => c.kind === "seek")).toBe(false);
-    // свежий замер с тем же отставанием — перематывает
-    engine.handle({
-      type: "player:media",
-      media: media({ playerState: "playing", positionMs: 2_100 }),
-    });
-    expect(commands().pop()).toEqual({ kind: "seek", positionMs: 3_500 });
   });
 
   it("detach: без плеера команды не шлёт", () => {
@@ -842,5 +843,235 @@ describe("SyncEngine: плеер", () => {
     engine.handle({ type: "player:detach" });
     joinExample();
     expect(commands()).toEqual([]);
+  });
+});
+
+describe("SyncEngine: контур подстройки", () => {
+  /** Когда комната проходит позицию 0, по часам воркера. */
+  let anchorAt: number;
+  /** Где комната сейчас, мс. */
+  const roomNow = () => now() - anchorAt;
+
+  /** Комната играет с нуля; старт и молчание контура после него позади. */
+  function startPlaying(): void {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample();
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing" }),
+    });
+    anchorAt = now() + 200;
+    socket().receive({
+      type: "playback:state",
+      payload: playing(0, anchorAt + SERVER),
+    });
+    vi.advanceTimersByTime(600);
+  }
+
+  /** Показан кадр: плеер отстаёт от комнаты на errorMs. */
+  function frame(errorMs: number): void {
+    engine.handle({
+      type: "player:sample",
+      positionMs: roomNow() - errorMs,
+      atMain: now() + PAGE,
+      frame: true,
+    });
+  }
+
+  /** Кадры каждые 20 мс, пока контур не решит что-то сделать или не пройдёт ms. */
+  function framesUntilDecision(errorMs: number, ms = 2_000): PlayerCommand[] {
+    const before = commands().length;
+    for (let t = 0; t < ms && commands().length === before; t += 20) {
+      vi.advanceTimersByTime(20);
+      frame(errorMs);
+    }
+    return commands().slice(before);
+  }
+
+  const lastPlay = () =>
+    commands()
+      .filter((c) => c.kind === "play")
+      .pop() as Extract<PlayerCommand, { kind: "play" }>;
+
+  it("отстаём на 100 мс — ускоряет плеер на 2 %, дальше не дёргает", () => {
+    startPlaying();
+    expect(framesUntilDecision(100)).toEqual([{ kind: "rate", rate: 1.02 }]);
+    expect(framesUntilDecision(100, 1_000)).toEqual([]);
+  });
+
+  it("ушли на 900 мс — перематывает с опережением, скорость обычная", () => {
+    startPlaying();
+    expect(framesUntilDecision(900)).toEqual([
+      { kind: "rate", rate: 1 },
+      { kind: "seek", positionMs: roomNow() + 60 },
+    ]);
+    // это дело одного плеера: комната ничего не узнаёт
+    expect(socket().ofType("playback:intent")).toEqual([]);
+  });
+
+  it("замеры первых 100 мс после старта не в счёт: плеер ещё трогается", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample();
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing" }),
+    });
+    anchorAt = now() + 200;
+    socket().receive({
+      type: "playback:state",
+      payload: playing(0, anchorAt + SERVER),
+    });
+    vi.advanceTimersByTime(200); // старт
+    const before = commands().length;
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(20);
+      frame(900); // головка ещё стоит
+    }
+    vi.advanceTimersByTime(200); // контур отмолчал
+    framesUntilDecision(900, 40);
+    // в счёт пошли только три последних кадра, решать ещё не по чему
+    expect(commands().slice(before)).toEqual([]);
+  });
+
+  it("пока плеер перематывается, замеры не в счёт, а накопленные сброшены", () => {
+    startPlaying();
+    const before = commands().length;
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(20);
+      frame(900); // набралось на решение…
+    }
+    // …но плеер начал перематываться: накопленное больше не в счёт
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "seeking" }),
+    });
+    framesUntilDecision(900, 300); // пока перематывается, кадры не в счёт
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing" }),
+    });
+    framesUntilDecision(0, 400); // перемотался туда, где комната
+    expect(commands().slice(before)).toEqual([]);
+    expect(framesUntilDecision(900).map((c) => c.kind)).toEqual([
+      "rate",
+      "seek",
+    ]);
+  });
+
+  it("вкладка вернулась на экран — секунду не измеряет", () => {
+    startPlaying();
+    engine.handle({ type: "player:visible" });
+    expect(framesUntilDecision(900, 900)).toEqual([]);
+    expect(framesUntilDecision(900).map((c) => c.kind)).toEqual([
+      "rate",
+      "seek",
+    ]);
+  });
+
+  it("новая команда комнаты сначала возвращает обычную скорость", () => {
+    startPlaying();
+    framesUntilDecision(100); // скорость 1.02
+    socket().receive({
+      type: "playback:state",
+      payload: { ...playing(5_000, 0), rev: 6, status: "paused" },
+    });
+    expect(commands().slice(-2)).toEqual([
+      { kind: "rate", rate: 1 },
+      { kind: "pause", rev: 6, positionMs: 5_000 },
+    ]);
+  });
+
+  it("кадров нет — сам спрашивает позицию раз в 100 мс", () => {
+    startPlaying();
+    const before = sampleRequests();
+    vi.advanceTimersByTime(300);
+    expect(sampleRequests() - before).toBe(3);
+    frame(0); // пошли кадры — спрашивать незачем
+    const after = sampleRequests();
+    vi.advanceTimersByTime(400);
+    expect(sampleRequests()).toBe(after);
+    // файла нет — и спрашивать, и подстраивать нечего
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "paused", hasSource: false }),
+    });
+    const noFile = sampleRequests();
+    vi.advanceTimersByTime(1_000);
+    expect(sampleRequests()).toBe(noFile);
+  });
+
+  it("опережение старта подбирает по первому замеру после старта", () => {
+    startPlaying();
+    expect(lastPlay().leadMs).toBe(40);
+    framesUntilDecision(60); // тронулись на 60 мс позже комнаты
+    socket().receive({
+      type: "playback:state",
+      payload: { ...playing(0, now() + SERVER + 200), rev: 6 },
+    });
+    expect(lastPlay().leadMs).toBe(70); // поправка на половину промаха
+  });
+
+  it("в Safari только перемотки: скорость не трогает", () => {
+    engine.handle({ type: "dispose" });
+    engine = makeEngine(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    );
+    startPlaying();
+    expect(framesUntilDecision(100, 1_000)).toEqual([]);
+    expect(framesUntilDecision(200).map((c) => c.kind)).toEqual([
+      "rate",
+      "seek",
+    ]);
+    expect(commands().filter((c) => c.kind === "rate")).toEqual([
+      { kind: "rate", rate: 1 },
+    ]);
+  });
+
+  it("поздний вход: комната не останавливается, плеер стартует с её позиции", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    // комната играет уже 5 с
+    joinExample(playing(0, now() + SERVER - 5_000));
+    expect(commands()).toEqual([
+      {
+        kind: "play",
+        rev: 5,
+        positionMs: 5_150,
+        atMain: now() + PAGE + 150,
+        rate: 1,
+        leadMs: 40,
+      },
+    ]);
+    expect(socket().ofType("playback:intent")).toEqual([]);
+  });
+
+  it("скорость контура — поправка к скорости комнаты", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample();
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing" }),
+    });
+    anchorAt = now() + 200;
+    socket().receive({
+      type: "playback:state",
+      payload: { ...playing(0, anchorAt + SERVER), rate: 2 },
+    });
+    vi.advanceTimersByTime(600);
+    // при скорости 2 комната идёт вдвое быстрее
+    const before = commands().length;
+    for (let t = 0; t < 2_000 && commands().length === before; t += 20) {
+      vi.advanceTimersByTime(20);
+      engine.handle({
+        type: "player:sample",
+        positionMs: 2 * roomNow() - 100,
+        atMain: now() + PAGE,
+        frame: true,
+      });
+    }
+    expect(commands().slice(before)).toEqual([{ kind: "rate", rate: 2.04 }]);
   });
 });

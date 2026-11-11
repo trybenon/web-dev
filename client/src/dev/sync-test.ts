@@ -99,7 +99,7 @@ function render(state: SyncState): void {
   if (playback) {
     const roomAt = positionAt(playback, client.serverNow());
     lines.push(
-      `воспроизведение: ${playback.status}, rev ${playback.rev}, комната на ${seconds(roomAt)} с, плеер на ${video.currentTime.toFixed(2)} с`,
+      `воспроизведение: ${playback.status}, rev ${playback.rev}, комната на ${seconds(roomAt)} с, плеер на ${video.currentTime.toFixed(2)} с, скорость ×${video.playbackRate.toFixed(3)}`,
     );
   }
   if (hold) {

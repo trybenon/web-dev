@@ -13,6 +13,7 @@ const scope = self as unknown as {
   postMessage(message: FromWorker): void;
   onmessage: ((event: MessageEvent<ToWorker>) => void) | null;
   close(): void;
+  navigator: { userAgent: string };
 };
 
 const engine = new SyncEngine({
@@ -27,6 +28,7 @@ const engine = new SyncEngine({
       close: () => socket.close(),
     };
   },
+  userAgent: scope.navigator.userAgent,
 });
 
 scope.onmessage = (event) => {

@@ -1,6 +1,6 @@
 /**
- * Ядро воркера синхронизации: соединение с сервером, часы, состояние комнаты
- * и команды плееру.
+ * Ядро воркера синхронизации: соединение с сервером, часы, состояние комнаты,
+ * команды плееру и контур подстройки, который держит плеер рядом с комнатой.
  *
  * Само ядро не знает ни про воркер, ни про WebSocket: сокет открывает
  * функция openSocket, а страница получает сообщения через post. Поэтому
@@ -14,6 +14,7 @@ import {
   type Playback,
   type ServerMessage,
 } from "@watch-together/shared";
+import { DriftController, isWebKitOnly, type Decision } from "./controller";
 import { ServerClock } from "./server-clock";
 import { errorAt, planStart, positionAt, type Clocks } from "./timeline";
 import type {
@@ -53,6 +54,8 @@ export interface EngineOptions {
   now?: () => number;
   /** Случайное число от 0 до 1: разброс пауз между переподключениями. */
   random?: () => number;
+  /** User-Agent браузера: в Safari контур только перематывает (decisions.md, 4.8). */
+  userAgent?: string;
 }
 
 /** Сервер закрыл соединение: с нашим токеном вошла другая вкладка. */
@@ -64,16 +67,18 @@ const TICK_MS = 1_000;
 /** Сколько замеров часов ждём до первой команды плееру. */
 const SERVER_ANSWERS_TO_APPLY = 4;
 const PAGE_ANSWERS_TO_APPLY = 3;
-/** Отчёт плеера старше этого, мс, для перемотки уже не годится. */
-const SAMPLE_MAX_AGE_MS = 2_000;
-/** Грубая поправка: разошлись с комнатой больше чем на столько, мс, — перематываем. */
-const RESYNC_AFTER_MS = 1_000;
-/** Не чаще раза за столько, мс, и не раньше, чем через столько после старта. */
-const RESYNC_COOLDOWN_MS = 3_000;
-/** Перемотка занимает время: целимся на столько вперёд, мс. */
-const RESYNC_LEAD_MS = 200;
-/** Насколько раньше якоря вызывать play(): видео трогается не сразу (decisions.md, 4.7). */
-const START_LEAD_MS = 40;
+/** Как часто контур подстройки принимает решение, мс. */
+const CONTROL_MS = 100;
+/** Кадров нет дольше этого, мс, — спрашиваем позицию сами (sync-drift.md, 2). */
+const FRAMES_STALE_MS = 500;
+/** Замеры раньше этого, мс, после старта ничего не значат: плеер трогается. */
+const SAMPLES_AFTER_START_MS = 100;
+/** После старта контур молчит ещё столько, мс. */
+const START_SETTLE_MS = 300;
+/** Перемотка или буферизация: столько, мс, не измеряем (sync-drift.md, 6). */
+const BUSY_HOLD_MS = 500;
+/** Вкладка вернулась из фона: столько, мс, не измеряем. */
+const VISIBLE_HOLD_MS = 1_000;
 /** Сколько команд держим, пока нет связи. */
 const MAX_QUEUE = 50;
 
@@ -88,6 +93,8 @@ export class SyncEngine {
   private readonly serverClock: ServerClock;
   /** Часы страницы: у воркера и окна разный ноль performance.now(). */
   private readonly pageClock: ServerClock;
+  /** Контур подстройки: решает, подкрутить скорость или перемотать. */
+  private readonly controller: DriftController;
 
   private url: string | null = null;
   private socket: Socket | null = null;
@@ -100,6 +107,7 @@ export class SyncEngine {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private tickTimer: ReturnType<typeof setInterval> | undefined;
+  private controlTimer: ReturnType<typeof setInterval> | undefined;
   private lastHeardAt = 0;
   /** Команды, отданные без связи: уйдут, когда соединение заработает. */
   private queue: ClientMessage[] = [];
@@ -131,7 +139,8 @@ export class SyncEngine {
   private commandRev = -1;
   /** Когда плеер стартует по последней команде play, по часам воркера. */
   private startAt = Infinity;
-  private lastResyncAt = -Infinity;
+  /** Когда пришёл последний замер с кадра, по часам воркера. */
+  private lastFrameAt = -Infinity;
 
   constructor(options: EngineOptions) {
     this.post = options.post;
@@ -146,6 +155,9 @@ export class SyncEngine {
       (t0) => this.post({ type: "clock:ping", t0 }),
       this.now,
     );
+    this.controller = new DriftController({
+      seekOnly: isWebKitOnly(options.userAgent ?? ""),
+    });
   }
 
   /** Сообщение от страницы. */
@@ -211,6 +223,13 @@ export class SyncEngine {
         this.apply();
         this.sendPresence();
         return;
+      case "player:sample":
+        this.onSample(message.positionMs, message.atMain, message.frame);
+        return;
+      case "player:visible":
+        // Chrome после фона включает видеодорожку своей перемоткой
+        this.controller.hold(this.now(), VISIBLE_HOLD_MS);
+        return;
       case "dispose":
         this.dispose();
         return;
@@ -224,6 +243,7 @@ export class SyncEngine {
     this.url = url;
     this.pageClock.start();
     this.tickTimer = setInterval(() => this.tick(), TICK_MS);
+    this.controlTimer = setInterval(() => this.control(), CONTROL_MS);
     this.open();
   }
 
@@ -564,6 +584,7 @@ export class SyncEngine {
     this.socketOpen = false;
     clearTimeout(this.reconnectTimer);
     clearInterval(this.tickTimer);
+    clearInterval(this.controlTimer);
     this.serverClock.stop();
     this.pageClock.stop();
     this.queue = [];
@@ -597,6 +618,7 @@ export class SyncEngine {
     }
     this.commandRev = playback.rev;
     this.startAt = Infinity;
+    const now = this.now();
     const { rev, positionMs } = playback;
     let command: PlayerCommand;
     switch (playback.status) {
@@ -607,7 +629,9 @@ export class SyncEngine {
         command = { kind: "prepare", rev, positionMs };
         break;
       case "playing": {
-        const plan = planStart(playback, this.now(), clocks);
+        // поздний вход тоже здесь: якорь в прошлом, и planStart назначает
+        // старт чуть впереди с позиции, где комната будет в этот момент
+        const plan = planStart(playback, now, clocks);
         this.startAt = plan.atMain - clocks.mainOffset;
         command = {
           kind: "play",
@@ -615,12 +639,18 @@ export class SyncEngine {
           positionMs: plan.positionMs,
           atMain: plan.atMain,
           rate: playback.rate,
-          leadMs: START_LEAD_MS,
+          leadMs: this.controller.startLeadMs,
         };
         break;
       }
     }
-    this.post({ type: "player:command", command });
+    // новая команда комнаты: скорость к 1, контур молчит, пока плеер её
+    // выполняет; промах прошлой перемотки уже ничего не скажет (sync-drift.md, 6)
+    const settleMs =
+      playback.status === "playing" ? this.startAt - now + START_SETTLE_MS : 0;
+    this.execute(this.controller.suspend(now, settleMs), playback, clocks);
+    if (playback.status === "playing") this.controller.noteStart();
+    this.command(command);
   }
 
   private onMedia(media: MediaReport): void {
@@ -628,7 +658,10 @@ export class SyncEngine {
     this.media = media;
     // файл сменился или пропал: старое подтверждение больше не считается
     if (before?.hasSource && !media.hasSource) this.appliedRev = -1;
-    this.resyncIfFar();
+    // перематывается или ждёт данных: на это время контур не измеряет
+    if (!isBusy(before) && isBusy(media)) {
+      this.controller.hold(this.now(), BUSY_HOLD_MS);
+    }
     if (
       !before ||
       before.hasSource !== media.hasSource ||
@@ -645,11 +678,7 @@ export class SyncEngine {
    * и при подготовке, и пока плеер стоит, а комната идёт. Свежесть замера
    * получатель решает сам по моменту at (protocol.md, «Присутствие»).
    */
-  private deviation(): {
-    errorMs: number;
-    atWorker: number;
-    at: number;
-  } | null {
+  private deviation(): { errorMs: number; at: number } | null {
     const { media, playback } = this;
     const clocks = this.clocks();
     if (!media || !playback || !clocks) return null;
@@ -660,7 +689,7 @@ export class SyncEngine {
       media.atMain,
       clocks,
     );
-    return { errorMs, atWorker, at: atWorker + clocks.serverOffset };
+    return { errorMs, at: atWorker + clocks.serverOffset };
   }
 
   /** Мой файл сверили с источником комнаты, и он не совпал. */
@@ -669,36 +698,58 @@ export class SyncEngine {
     return this.source.checks.some((c) => c.peerId === you && !c.ok);
   }
 
-  /**
-   * Страховка до появления контура подстройки: плеер ушёл от комнаты
-   * больше чем на секунду (подвисла вкладка, долго грузился кусок) —
-   * перематываем туда, где комната сейчас.
-   */
-  private resyncIfFar(): void {
-    const deviation = this.deviation();
-    const clocks = this.clocks();
+  /** Замер позиции для контура: с показанного кадра или по нашему запросу. */
+  private onSample(positionMs: number, atMain: number, frame: boolean): void {
+    if (frame) this.lastFrameAt = this.now();
     const playback = this.playback;
-    if (!deviation || !clocks || playback?.status !== "playing") return;
-    if (this.media?.playerState !== "playing") return;
+    const clocks = this.clocks();
+    if (!clocks || playback?.status !== "playing") return;
+    if (playback.rev !== this.commandRev || isBusy(this.media)) return;
+    const { atWorker, errorMs } = errorAt(playback, positionMs, atMain, clocks);
+    // до старта и в первые мгновения после него ошибка ничего не значит
+    if (atWorker < this.startAt + SAMPLES_AFTER_START_MS) return;
+    this.controller.addSample(atWorker, errorMs);
+  }
+
+  /** Раз в 100 мс: решение контура подстройки (sync-drift.md, 4). */
+  private control(): void {
+    const playback = this.playback;
+    const clocks = this.clocks();
     const now = this.now();
-    if (
-      // по старому отчёту не перематываем: он уже неправда
-      now - deviation.atWorker > SAMPLE_MAX_AGE_MS ||
-      now < this.startAt + RESYNC_COOLDOWN_MS ||
-      now - this.lastResyncAt < RESYNC_COOLDOWN_MS ||
-      Math.abs(deviation.errorMs) < RESYNC_AFTER_MS
-    ) {
+    if (!clocks || playback?.status !== "playing" || !this.playerAttached) {
       return;
     }
-    this.lastResyncAt = now;
-    const positionMs = positionAt(
-      playback,
-      now + clocks.serverOffset + RESYNC_LEAD_MS,
-    );
-    this.post({
-      type: "player:command",
-      command: { kind: "seek", positionMs },
-    });
+    // без файла подстраивать нечего
+    if (!this.media?.hasSource) return;
+    if (playback.rev !== this.commandRev || now < this.startAt) return;
+    // кадров нет (вкладка в фоне или браузер без rVFC): спрашиваем позицию сами
+    if (now - this.lastFrameAt > FRAMES_STALE_MS) {
+      this.command({ kind: "sample" });
+    }
+    this.execute(this.controller.decide(now), playback, clocks);
+  }
+
+  /**
+   * Выполнить решение контура. Его скорость — поправка к скорости комнаты.
+   * Ни перемотка, ни скорость не уходят на сервер: это дело одного плеера.
+   */
+  private execute(
+    decision: Decision,
+    playback: Playback,
+    clocks: Clocks,
+  ): void {
+    if (decision.kind === "rate") {
+      this.command({ kind: "rate", rate: playback.rate * decision.rate });
+    } else if (decision.kind === "seek") {
+      // после перемотки — снова обычная скорость
+      this.command({ kind: "rate", rate: playback.rate });
+      const at = this.now() + clocks.serverOffset + decision.leadMs;
+      this.command({ kind: "seek", positionMs: positionAt(playback, at) });
+    }
+  }
+
+  private command(command: PlayerCommand): void {
+    this.post({ type: "player:command", command });
   }
 
   /** Отчёт о готовности: раз в секунду и при каждой смене состояния плеера. */
@@ -758,4 +809,9 @@ export class SyncEngine {
     };
     this.post({ type: "state", state });
   }
+}
+
+/** Плеер перематывается или ждёт данных. */
+function isBusy(media: MediaReport | null): boolean {
+  return media?.playerState === "seeking" || media?.playerState === "buffering";
 }
