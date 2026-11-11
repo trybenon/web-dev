@@ -360,21 +360,16 @@ HTTP-тесты создают временные файлы и запускаю
 
 ## Демонстрационный ролик
 
-В репозиторий включён `client/public/media/demo.webm`: 30-секундный фрагмент
-Big Buck Bunny (00:30–01:00), © 2008 Blender Foundation / www.bigbuckbunny.org.
-Лицензия — [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/),
-[условия автора](https://peach.blender.org/about/).
-Фрагмент обрезан и перекодирован; автор и лицензия указаны на главной странице.
-Это не public domain. Источник и сведения о преобразовании находятся в
-`client/public/media/demo.LICENSE.txt`.
+В комнате используется `client/public/media/demo.webm` длительностью около
+90 секунд. Это [Grand Theft Auto VI Launch Trailer](https://www.rockstargames.com/VI/launch-trailer)
+от Rockstar Games. Сведения об исходной копии, перекодировании и правах
+записаны в `client/public/media/demo.LICENSE.txt`. Название и ссылка на
+официальную публикацию видны рядом с видео в комнате.
 
-Формат: WebM, видео VP9 (640 × 360, 24 кадра/с, yuv420p), звук Opus
-(стерео, 48 кГц). Демо доступно по `/media/demo.webm` с того же origin,
-что и приложение: в разработке файл отдаёт Vite, после `npm run build` —
-HTTP-сервер. Файл включён в git; скачивание или FFmpeg для запуска не нужны.
-
-Компонент `client/src/components/DemoAttribution.vue` содержит подпись и ссылку
-на ролик. При интеграции плеера (#48) подпись должна остаться видимой рядом с ним.
+Файл в формате WebM содержит видео VP9 (640 × 360, 30 кадров/с, yuv420p) и
+стереозвук Opus (48 кГц). Демо доступно по `/media/demo.webm` с того же origin,
+что и приложение. В разработке файл отдаёт Vite, а после `npm run build` —
+HTTP-сервер.
 
 Проверка: `npm run e2e -- e2e/demo.spec.ts` проверяет выдачу и фактическое
 воспроизведение файла в Chromium. Перед закрытием #24 также нужно вручную

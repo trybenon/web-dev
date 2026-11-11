@@ -6,7 +6,7 @@ import { sanitizeErrorEvent } from "@watch-together/shared";
 
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
-import "./index.css";
+import "./styles/index.css";
 
 import App from "./App.vue";
 

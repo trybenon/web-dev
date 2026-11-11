@@ -1,0 +1,241 @@
+.room-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 100svh;
+  padding: 20px 20px 12px;
+  text-align: start;
+}
+
+.room-view-with-settings {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 24.2%);
+  padding: clamp(20px, 11.5svh, 70px) 13px 12px 10px;
+}
+
+.room-view-main {
+  display: grid;
+  grid-template-rows: minmax(220px, 1fr) minmax(44px, auto);
+  gap: 20px;
+  min-width: 0;
+}
+
+.room-view-with-settings .room-view-main {
+  gap: 36px;
+}
+
+.room-view-screen {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.room-view-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.room-view-demo-credit {
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-start: 12px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 4px 8px;
+  color: var(--text-h);
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: start;
+}
+
+.room-view-demo-credit a {
+  color: var(--accent);
+}
+
+.room-view-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.room-view-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.room-view-player-controls {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  background: linear-gradient(transparent 65%, rgb(0 0 0 / 55%));
+}
+
+.room-view-screen:is(:hover, :focus-visible, :has(:focus-visible))
+  .room-view-player-controls {
+  visibility: visible;
+}
+
+.room-view-player-buttons {
+  --play-size: clamp(62px, 14vw, 124px);
+
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.room-view-player-button {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.room-view-player-button img {
+  display: block;
+  width: var(--play-size);
+  height: var(--play-size);
+  border-radius: 20%;
+  background-color: rgb(0 0 0 / 25%);
+  transition: background-color 150ms ease;
+}
+
+.room-view-player-skip img {
+  width: calc(var(--play-size) / 2);
+  height: calc(var(--play-size) / 2);
+}
+
+.room-view-timeline {
+  position: absolute;
+  inset: auto 12px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.room-view-seek {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+  pointer-events: auto;
+}
+
+.room-view-time {
+  color: var(--text-h);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.room-view-playback-notice {
+  position: absolute;
+  z-index: 1;
+  inset-inline-end: 12px;
+  inset-block-end: 12px;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background-color: rgb(0 0 0 / 80%);
+  color: var(--text-h);
+  font-size: 12px;
+  pointer-events: none;
+  transition: transform 150ms ease;
+}
+
+.room-view-screen:is(:hover, :focus-visible, :has(:focus-visible))
+  .room-view-playback-notice {
+  transform: translateY(-36px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-view-playback-notice {
+    transition: none;
+  }
+}
+
+.room-view-action-trigger {
+  display: inline-flex;
+}
+
+.room-view-action {
+  width: 50px;
+  height: 50px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+}
+
+.room-view-action img {
+  display: block;
+}
+
+.room-view-player-button:is(:hover, :focus-visible):enabled img {
+  background-color: rgb(0 0 0 / 50%);
+}
+
+@media (width <= 720px) {
+  .room-view,
+  .room-view-with-settings {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .room-view-with-settings {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .room-view-main,
+  .room-view-with-settings .room-view-main {
+    gap: 12px;
+  }
+}
+
+.room-view-action:hover,
+.room-view-action.room-view-action-open {
+  background: var(--surface);
+  border-color: transparent;
+}
+
+.room-view-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.room-view-action .room-view-exit-icon-red {
+  display: none;
+}
+
+.room-view-action:is(:hover, :focus-visible) .room-view-exit-icon {
+  display: none;
+}
+
+.room-view-action:is(:hover, :focus-visible) .room-view-exit-icon-red {
+  display: block;
+}

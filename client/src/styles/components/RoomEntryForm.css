@@ -1,0 +1,51 @@
+.room-entry {
+  display: grid;
+  min-height: 100svh;
+  box-sizing: border-box;
+  padding: 20px;
+  place-items: center;
+}
+
+.room-entry-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  width: min(100%, 620px);
+  min-height: 350px;
+  box-sizing: border-box;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.room-entry-title {
+  margin: 0;
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: normal;
+}
+
+.room-entry-form {
+  display: grid;
+  justify-items: center;
+  gap: 38px;
+  width: min(100%, 362px);
+}
+
+.room-entry-input {
+  --el-input-height: 34px;
+  --el-input-border-radius: 10px;
+
+  font-size: 18px;
+}
+
+.room-entry-submit {
+  min-height: 34px;
+  border-radius: 10px;
+  font-size: 18px;
+}
