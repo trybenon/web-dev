@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import * as Sentry from "@sentry/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createAppServer } from "./app.js";
@@ -12,6 +13,7 @@ import {
   clientExamples,
   invalidClientMessages,
   parseServerMessage,
+  sanitizeErrorEvent,
   type ServerMessage,
 } from "@watch-together/shared";
 
@@ -26,10 +28,12 @@ const onMessage =
     (client: GatewayClient, message: GatewayMessage) => void | Promise<void>
   >();
 const onClose = vi.fn<(client: GatewayClient) => void | Promise<void>>();
+const onHandlerError = vi.fn<(error: unknown) => void>();
 
 beforeEach(async () => {
   onMessage.mockReset();
   onClose.mockReset();
+  onHandlerError.mockReset();
   rateTime = 0;
 
   server = createAppServer();
@@ -37,6 +41,7 @@ beforeEach(async () => {
   gateway = attachWebSocketGateway(server, {
     onMessage,
     onClose,
+    onHandlerError,
     heartbeatIntervalMs: 100,
     rateLimit: {
       limit: 3,
@@ -329,6 +334,7 @@ describe("WebSocket gateway", () => {
       await vi.waitFor(() => {
         expect(onClose).toHaveBeenCalledTimes(1);
         expect(context.roomId).toBeNull();
+        expect(onHandlerError).toHaveBeenCalledExactlyOnceWith(failure);
       });
 
       const anotherClient = await connectClient();
@@ -364,6 +370,7 @@ describe("WebSocket gateway", () => {
 
       expect(code).toBe(1011);
       expect(reason.toString()).toBe("Message handler failed");
+      expect(onHandlerError).toHaveBeenCalledExactlyOnceWith(failure);
 
       const anotherClient = await connectClient();
 
@@ -380,6 +387,78 @@ describe("WebSocket gateway", () => {
       });
     },
   );
+  it("sends a sanitized WebSocket handler failure to the Sentry transport", async () => {
+    const receiveEvent = vi.fn<(event: unknown) => void>();
+    Sentry.init({
+      dsn: "https://public@example.invalid/1",
+      defaultIntegrations: false,
+      skipOpenTelemetrySetup: true,
+      beforeSend: sanitizeErrorEvent,
+      release: "test-release",
+      transport: () => ({
+        async send(envelope) {
+          for (const [header, payload] of envelope[1]) {
+            if (header.type === "event") receiveEvent(payload);
+          }
+
+          return { statusCode: 200 };
+        },
+        async flush() {
+          return true;
+        },
+      }),
+    });
+
+    try {
+      onHandlerError.mockImplementation(Sentry.captureException);
+      const failure = new Error("private-test-message");
+      onMessage.mockRejectedValue(failure);
+
+      const client = await connectClient();
+      const closed = once(client, "close");
+      client.send(JSON.stringify(clientExamples.roomCreate));
+
+      const [code] = await closed;
+      expect(code).toBe(1011);
+      expect(await Sentry.flush(1000)).toBe(true);
+      expect(receiveEvent).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          platform: "node",
+          release: "test-release",
+          exception: {
+            values: [
+              expect.objectContaining({
+                value: expect.stringMatching(/^Сервер · /),
+                stacktrace: expect.any(Object),
+              }),
+            ],
+          },
+        }),
+      );
+      expect(JSON.stringify(receiveEvent.mock.calls)).not.toContain(
+        "private-test-message",
+      );
+    } finally {
+      await Sentry.close(1000);
+    }
+  });
+
+  it("closes the connection even when the error reporter throws", async () => {
+    const failure = new Error("Test message handler failure");
+    onMessage.mockRejectedValue(failure);
+    onHandlerError.mockImplementation(() => {
+      throw new Error("Test error reporter failure");
+    });
+
+    const client = await connectClient();
+    const closed = once(client, "close");
+    client.send(JSON.stringify(clientExamples.roomCreate));
+
+    const [code] = await closed;
+    expect(code).toBe(1011);
+    expect(onHandlerError).toHaveBeenCalledExactlyOnceWith(failure);
+  });
+
   it.each(invalidClientMessages)(
     "rejects a shared invalid example: $why",
     async ({ data }) => {
@@ -395,6 +474,7 @@ describe("WebSocket gateway", () => {
       });
 
       expect(onMessage).not.toHaveBeenCalled();
+      expect(onHandlerError).not.toHaveBeenCalled();
 
       const pong = await exchange(
         client,
@@ -740,6 +820,7 @@ describe("WebSocket gateway", () => {
       },
     });
     expect(client.readyState).toBe(WebSocket.OPEN);
+    expect(onHandlerError).not.toHaveBeenCalled();
 
     rateTime = 1000;
 

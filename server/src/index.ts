@@ -23,7 +23,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const server = createAppServer();
-attachWebSocketGateway(server);
+attachWebSocketGateway(server, {
+  onHandlerError: dsn ? Sentry.captureException : undefined,
+});
 
 server.listen(port, host, () => {
   console.log(`Server: http://${host}:${port}`);
