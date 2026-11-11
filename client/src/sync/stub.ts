@@ -19,6 +19,7 @@ import type {
   SyncError,
   SyncState,
 } from "./types";
+import { positionAt } from "./timeline";
 
 export const STUB_ROOM_IDS = {
   /** joinRoom в эту комнату → room_not_found. */
@@ -34,15 +35,6 @@ export interface StubOptions {
   holdMs?: number;
 }
 const EMPTY_SOURCE: SyncState["source"] = { source: null, checks: [] };
-
-/** Где головка должна быть в момент now. */
-export function positionAt(playback: Playback, now: number): number {
-  if (playback.status !== "playing") {
-    return playback.positionMs;
-  }
-  const elapsed = Math.max(0, now - playback.anchorServerTime);
-  return playback.positionMs + elapsed * playback.rate;
-}
 
 /** Комната из примеров протокола, где я — второй участник. */
 function joinedRoom(roomId: RoomId, name: string): RoomView {

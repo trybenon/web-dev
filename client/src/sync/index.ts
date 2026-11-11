@@ -22,9 +22,9 @@ export type { StubOptions, VideoLike } from "./stub";
 export {
   createStubPlayerBridge,
   createStubSyncClient,
-  positionAt,
   STUB_ROOM_IDS,
 } from "./stub";
+export { positionAt } from "./timeline";
 
 /** Для приложения. Пока воркера нет (#5) — заглушка, потом настоящий клиент. */
 export const createSyncClient = createStubSyncClient;
