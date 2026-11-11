@@ -1,13 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { Room, type Outbound } from "./room.js";
-import { clientExamples, type Presence } from "@watch-together/shared";
+import {
+  clientExamples,
+  ServerMessageSchema,
+  type Presence,
+} from "@watch-together/shared";
 
 /** Типы сообщений по порядку — так проще сравнивать. */
 const types = (out: Outbound[]): string[] => out.map((o) => o.msg.type);
 
+/**
+ * Комната для тестов. Каждое сообщение, которое вернул её метод,
+ * проверяется схемой протокола: не прошло — тест падает с разбором zod.
+ */
+function newRoom(now = 0): Room {
+  return new Proxy(new Room("r", now), {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        const result: unknown = value.apply(target, args);
+        for (const item of [result].flat()) {
+          if (isOutbound(item)) ServerMessageSchema.parse(item.msg);
+        }
+        return result;
+      };
+    },
+  });
+}
+
+function isOutbound(item: unknown): item is Outbound {
+  return typeof item === "object" && item !== null && "msg" in item;
+}
+
 /** Комната с участниками p1…pn, создана в момент 0. */
 function roomWith(n: number): Room {
-  const room = new Room("r", 0);
+  const room = newRoom();
   for (let i = 1; i <= n; i++) room.join(`p${i}`, `P${i}`, `token-${i}`);
   return room;
 }
@@ -31,7 +59,7 @@ const offer = clientExamples.sourcePropose.payload;
 
 describe("Room: начальное состояние", () => {
   it("новая комната на паузе в начале, якорь - момент создания", () => {
-    const room = new Room("r", 1_000);
+    const room = newRoom(1_000);
     expect(room.playback).toEqual({
       rev: 0,
       status: "paused",
@@ -42,18 +70,18 @@ describe("Room: начальное состояние", () => {
     });
   });
   it("playback отдает копию, снаружи состояние не поменять", () => {
-    const room = new Room("r", 0);
+    const room = newRoom(0);
     room.playback.positionMs = 99;
     expect(room.playback.positionMs).toBe(0);
   });
   it("на паузе позиция стоит", () => {
-    expect(new Room("r", 0).positionAt(60_000)).toBe(0);
+    expect(newRoom(0).positionAt(60_000)).toBe(0);
   });
 });
 
 describe("Room: вход и выход", () => {
   it("новичок получает снимок, остальные — уведомление", () => {
-    const room = new Room("r", 0);
+    const room = newRoom(0);
     room.join("a", "Аня", "token-a");
     const out = room.join("b", "Боря", "token-b");
     expect(types(out)).toEqual(["room:state", "room:peer_joined"]);
@@ -105,7 +133,7 @@ describe("Room: вход и выход", () => {
 
 describe("Room: намерения", () => {
   it("намерение не участника — not_joined", () => {
-    const out = new Room("r", 0).intent("x", { action: "play" }, 0);
+    const out = newRoom(0).intent("x", { action: "play" }, 0);
     expect(out).toMatchObject([
       { to: "x", msg: { type: "error", payload: { code: "not_joined" } } },
     ]);
@@ -251,7 +279,7 @@ describe("Room: барьер готовности", () => {
   });
 
   it("отчёт незнакомца игнорируется", () => {
-    expect(new Room("r", 0).presence("x", ready(0), 0)).toEqual([]);
+    expect(newRoom(0).presence("x", ready(0), 0)).toEqual([]);
   });
 
   it("пауза во время ожидания снимает барьер и оставляет позицию", () => {
@@ -287,14 +315,25 @@ describe("Room: барьер готовности", () => {
     });
   });
 
-  it("presenceSync рассылает тех, кто уже отчитался", () => {
+  it("presenceSync рассылает всех; кто не отчитался — с пустым отчётом", () => {
     const room = roomWith(2);
     room.presence("p1", ready(0), 0);
     expect(room.presenceSync()).toMatchObject({
       to: "all",
       msg: {
         type: "presence:sync",
-        payload: { peers: [{ peerId: "p1", connection: "online" }] },
+        payload: {
+          peers: [
+            { peerId: "p1", connection: "online", hasSource: true },
+            {
+              peerId: "p2",
+              connection: "online",
+              hasSource: false,
+              appliedRev: -1,
+              deviationMs: null,
+            },
+          ],
+        },
       },
     });
   });
@@ -338,7 +377,7 @@ describe("Room: источник", () => {
   });
 
   it("источник от незнакомца — not_joined", () => {
-    const room = new Room("r", 0);
+    const room = newRoom(0);
     expect(types(room.proposeSource("x", offer, 0))).toEqual(["error"]);
     expect(types(room.matchSource("x", 1, true))).toEqual(["error"]);
   });
@@ -357,6 +396,49 @@ describe("Room: источник", () => {
       to: "p2",
       msg: { payload: { checks: [{ peerId: "p1", ok: true }] } },
     });
+  });
+
+  it("после выхода участника его сверки нет у новичка", () => {
+    const room = roomWith(2);
+    room.proposeSource("p1", offer, 0);
+    room.matchSource("p1", 1, true);
+    room.matchSource("p2", 1, true);
+    room.leave("p2", 0);
+    const out = room.join("p3", "P3", "token-3");
+    expect(out[1]).toMatchObject({
+      to: "p3",
+      msg: {
+        type: "source:state",
+        payload: { checks: [{ peerId: "p1", ok: true }] },
+      },
+    });
+  });
+
+  it("перемотка на паузе не уходит дальше конца фильма", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.intent("p1", { action: "seek", positionMs: 120_000 }, 1_000);
+    expect(room.playback).toMatchObject({
+      status: "paused",
+      positionMs: 60_000,
+    });
+  });
+
+  it("перемотка во время игры тоже упирается в конец фильма", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.intent("p1", { action: "play" }, 0);
+    expect(room.playback.status).toBe("playing");
+    room.intent("p1", { action: "seek", positionMs: 120_000 }, 1_000);
+    expect(room.playback.positionMs).toBe(60_000);
+  });
+
+  it("пауза после конца фильма ставит головку на конец", () => {
+    const room = roomWith(1);
+    room.proposeSource("p1", { ...offer, durationMs: 60_000 }, 0);
+    room.intent("p1", { action: "play" }, 0);
+    room.intent("p1", { action: "pause" }, 90_000);
+    expect(room.playback.positionMs).toBe(60_000);
   });
 
   it("у конца ролика не требует буфера больше оставшегося", () => {
@@ -405,6 +487,29 @@ describe("Room: обрыв связи", () => {
           peers: [{}, { peerId: "p2", connection: "online" }],
         },
       },
+    });
+  });
+
+  it("обрыв и возвращение до первого отчёта видны остальным", () => {
+    const room = roomWith(2);
+    expect(room.disconnect("p2", 0)).toMatchObject([
+      {
+        to: "all",
+        msg: {
+          type: "presence:sync",
+          payload: {
+            peers: [
+              { peerId: "p1" },
+              { peerId: "p2", connection: "reconnecting" },
+            ],
+          },
+        },
+      },
+    ]);
+    const back = room.reconnect("p2");
+    expect(back[1]).toMatchObject({
+      to: "all",
+      msg: { payload: { peers: [{}, { peerId: "p2", connection: "online" }] } },
     });
   });
 
