@@ -64,7 +64,7 @@ const TICK_MS = 1_000;
 /** Сколько замеров часов ждём до первой команды плееру. */
 const SERVER_ANSWERS_TO_APPLY = 4;
 const PAGE_ANSWERS_TO_APPLY = 3;
-/** Отчёт плеера старше этого, мс, для отклонения уже не годится. */
+/** Отчёт плеера старше этого, мс, для перемотки уже не годится. */
 const SAMPLE_MAX_AGE_MS = 2_000;
 /** Грубая поправка: разошлись с комнатой больше чем на столько, мс, — перематываем. */
 const RESYNC_AFTER_MS = 1_000;
@@ -635,24 +635,35 @@ export class SyncEngine {
     }
   }
 
-  /** Насколько плеер отстаёт от комнаты по последнему отчёту. */
-  private deviation(): { errorMs: number; at: number } | null {
+  /**
+   * Насколько плеер отстаёт от комнаты по последнему отчёту плеера.
+   * null — только когда сравнивать не с чем: нет файла или он не совпал
+   * с источником комнаты. В остальное время отклонение честное: и на паузе,
+   * и при подготовке, и пока плеер стоит, а комната идёт. Свежесть замера
+   * получатель решает сам по моменту at (protocol.md, «Присутствие»).
+   */
+  private deviation(): {
+    errorMs: number;
+    atWorker: number;
+    at: number;
+  } | null {
     const { media, playback } = this;
     const clocks = this.clocks();
-    if (!media || !playback || !clocks || playback.status !== "playing") {
-      return null;
-    }
+    if (!media || !playback || !clocks) return null;
+    if (!media.hasSource || this.fileMismatch()) return null;
     const { atWorker, errorMs } = errorAt(
       playback,
       media.positionMs,
       media.atMain,
       clocks,
     );
-    // до старта сравнивать не с чем, а старый отчёт уже неправда
-    if (atWorker < this.startAt || this.now() - atWorker > SAMPLE_MAX_AGE_MS) {
-      return null;
-    }
-    return { errorMs, at: atWorker + clocks.serverOffset };
+    return { errorMs, atWorker, at: atWorker + clocks.serverOffset };
+  }
+
+  /** Мой файл сверили с источником комнаты, и он не совпал. */
+  private fileMismatch(): boolean {
+    const you = this.room?.you;
+    return this.source.checks.some((c) => c.peerId === you && !c.ok);
   }
 
   /**
@@ -663,10 +674,13 @@ export class SyncEngine {
   private resyncIfFar(): void {
     const deviation = this.deviation();
     const clocks = this.clocks();
-    if (!deviation || !clocks || !this.playback) return;
+    const playback = this.playback;
+    if (!deviation || !clocks || playback?.status !== "playing") return;
     if (this.media?.playerState !== "playing") return;
     const now = this.now();
     if (
+      // по старому отчёту не перематываем: он уже неправда
+      now - deviation.atWorker > SAMPLE_MAX_AGE_MS ||
       now < this.startAt + RESYNC_COOLDOWN_MS ||
       now - this.lastResyncAt < RESYNC_COOLDOWN_MS ||
       Math.abs(deviation.errorMs) < RESYNC_AFTER_MS
@@ -675,7 +689,7 @@ export class SyncEngine {
     }
     this.lastResyncAt = now;
     const positionMs = positionAt(
-      this.playback,
+      playback,
       now + clocks.serverOffset + RESYNC_LEAD_MS,
     );
     this.post({

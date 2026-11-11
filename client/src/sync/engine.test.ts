@@ -670,7 +670,7 @@ describe("SyncEngine: плеер", () => {
       hasSource: true,
       playerState: "paused",
       appliedRev: -1,
-      deviationMs: null,
+      deviationMs: 0, // стоим там же, где комната
     });
     engine.handle({ type: "player:applied", rev: 0 });
     expect(reports()[1].payload.appliedRev).toBe(0);
@@ -737,20 +737,102 @@ describe("SyncEngine: плеер", () => {
     expect(commands().filter((c) => c.kind === "seek")).toHaveLength(1);
   });
 
-  it("до старта и на паузе отклонения нет", () => {
+  it("без файла и с несовпавшим файлом отклонение null", () => {
     connect();
     engine.handle({ type: "player:attach" });
     joinExample();
+    const anchor = now() + SERVER + 200;
+    socket().receive({ type: "playback:state", payload: playing(0, anchor) });
+    vi.advanceTimersByTime(3_500); // комната на 3,3 с
+    const last = () => socket().ofType("presence:update").pop()?.payload;
+    const atMain = now() + PAGE;
+    const report = (changes: Partial<MediaReport>) =>
+      engine.handle({
+        type: "player:media",
+        media: media({ playerState: "playing", atMain, ...changes }),
+      });
+    report({ hasSource: false, positionMs: 0 });
+    expect(last()?.deviationMs).toBeNull();
+    expect(commands().some((c) => c.kind === "seek")).toBe(false);
+    // файл есть, но сверка с источником комнаты не прошла
+    const source = serverExamples.sourceState.payload.source;
+    socket().receive({
+      type: "source:state",
+      payload: { source, checks: [{ peerId: "peer-petya", ok: false }] },
+    });
+    report({ positionMs: 3_200 });
+    expect(last()?.deviationMs).toBeNull();
+    // моя сверка прошла (чужая неудача не в счёт) — сравнивать есть с чем
+    socket().receive({
+      type: "source:state",
+      payload: {
+        source,
+        checks: [
+          { peerId: "peer-anya", ok: false },
+          { peerId: "peer-petya", ok: true },
+        ],
+      },
+    });
+    vi.advanceTimersByTime(1_000);
+    expect(last()?.deviationMs).toBe(100);
+  });
+
+  it("на паузе, при подготовке и до старта отклонение честное", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample(); // пауза на 0
+    const last = () => socket().ofType("presence:update").pop()?.payload;
+    engine.handle({
+      type: "player:media",
+      media: media({ positionMs: 12 }),
+    });
+    expect(last()?.deviationMs).toBe(-12); // чуть впереди комнаты
+    // комната готовится к 3 с, а плеер ещё перематывается с 1 с
     socket().receive({
       type: "playback:state",
-      payload: playing(0, now() + SERVER + 5_000),
+      payload: { ...playing(3_000, 0), rev: 1, status: "waiting" },
     });
     engine.handle({
       type: "player:media",
-      media: media({ playerState: "paused" }),
+      media: media({ playerState: "seeking", positionMs: 1_000 }),
     });
-    const reports = socket().ofType("presence:update");
-    expect(reports[reports.length - 1].payload.deviationMs).toBeNull();
+    expect(last()?.deviationMs).toBe(2_000);
+    // старт через 5 с: до него комната стоит на 3 с, как и плеер
+    socket().receive({
+      type: "playback:state",
+      payload: playing(3_000, now() + SERVER + 5_000),
+    });
+    engine.handle({
+      type: "player:media",
+      media: media({ positionMs: 3_000 }),
+    });
+    expect(last()?.deviationMs).toBe(0);
+  });
+
+  it("по старому отчёту не перематывает, но отклонение отдаёт с моментом замера", () => {
+    connect();
+    engine.handle({ type: "player:attach" });
+    joinExample();
+    const anchor = now() + SERVER + 200;
+    socket().receive({ type: "playback:state", payload: playing(0, anchor) });
+    vi.advanceTimersByTime(3_500); // комната на 3,3 с
+    // замер 2,1 с назад (вкладка подвисла): комната была на 1,2 с, плеер на 0
+    const atMain = now() + PAGE - 2_100;
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing", positionMs: 0, atMain }),
+    });
+    expect(socket().ofType("presence:update").pop()?.payload).toMatchObject({
+      deviationMs: 1_200,
+      deviationAt: now() - 2_100 + SERVER,
+    });
+    expect(commands().some((c) => c.kind === "seek")).toBe(false);
+    // свежий замер с тем же отставанием — перематывает
+    engine.handle({
+      type: "player:media",
+      media: media({ playerState: "playing", positionMs: 2_100 }),
+    });
+    expect(commands().pop()).toEqual({ kind: "seek", positionMs: 3_500 });
   });
 
   it("detach: без плеера команды не шлёт", () => {
