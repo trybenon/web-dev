@@ -1,0 +1,29 @@
+Big Buck Bunny — demonstration excerpt
+
+Copyright (c) 2008, Blender Foundation / www.bigbuckbunny.org
+Film: https://peach.blender.org/
+Author's license and attribution requirements: https://peach.blender.org/about/
+License: Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+https://creativecommons.org/licenses/by/3.0/
+Legal code: https://creativecommons.org/licenses/by/3.0/legalcode
+
+This is an adapted excerpt, not the complete movie and not public domain.
+Changes: selected 00:30–01:00 of the film; resized to 640x360; converted to
+24 fps VP9/yuv420p video and stereo Opus/48 kHz audio in a WebM container.
+Original characters, music and images remain the work of the film's creators.
+
+Source archive (official Blender download server):
+https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v.zip
+Source file inside the archive: BigBuckBunny_640x360.m4v
+
+SHA-256 of demo.webm:
+0e3b0cdacfd6d65a5e424eaca2988597f5f39e923a0a673985faa4daf115b231
+
+Reproduction (FFmpeg with libvpx-vp9 and libopus):
+ffmpeg -ss 30 -i BigBuckBunny_640x360.m4v -t 30 -map 0:v:0 -map 0:a:0 -vf "fps=24,scale=640:360:flags=lanczos,setsar=1" -c:v libvpx-vp9 -crf 36 -b:v 0 -pix_fmt yuv420p -row-mt 1 -cpu-used 4 -threads 2 -c:a libopus -b:a 64k -ac 2 -ar 48000 -map_metadata -1 demo.webm
+
+Encoding output may differ across FFmpeg versions. Reproduction is optional:
+the ready-to-use demo.webm is included in the repository.
+
+Keep the copyright, license link and modification notice visible when using
+this excerpt in the application; see client/src/components/DemoAttribution.vue.
