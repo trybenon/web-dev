@@ -36,8 +36,6 @@ jobs:
             platform: linux/amd64
           - arch: arm64
             platform: linux/arm64
-    env:
-      DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -61,6 +59,8 @@ jobs:
           cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
 
       - name: Start and wait for healthcheck
+        env:
+          DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
         run: docker compose up --detach --no-build --wait --wait-timeout 90
 
       - name: Check built client and API routing
