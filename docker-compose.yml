@@ -1,0 +1,19 @@
+services:
+  app:
+    image: watch-together:local
+    build:
+      context: .
+      target: runtime
+    init: true
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "/app/scripts/healthcheck.mjs"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

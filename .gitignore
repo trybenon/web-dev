@@ -6,3 +6,7 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 .idea
+
+.env
+.env.*
+!.env.example

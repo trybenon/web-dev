@@ -31,6 +31,7 @@ export default defineConfig([
   {
     files: [
       "server/**/*.{js,ts}",
+      "scripts/**/*.{js,mjs,cjs,ts,mts}",
       "*.{js,mjs,cjs,ts,mts}",
       "client/vite.config.ts",
     ],
