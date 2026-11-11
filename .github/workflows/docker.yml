@@ -1,0 +1,84 @@
+name: Docker
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "Makefile"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig*.json"
+      - ".npmrc"
+      - "client/**"
+      - "server/**"
+      - "shared/**"
+      - "scripts/healthcheck.mjs"
+      - ".github/workflows/docker.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Docker (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+    env:
+      DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Enable ARM emulation
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and load image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: ${{ matrix.platform }}
+          tags: watch-together:local
+          load: true
+          push: false
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+
+      - name: Start and wait for healthcheck
+        run: docker compose up --detach --no-build --wait --wait-timeout 90
+
+      - name: Check built client and API routing
+        run: |
+          docker compose exec -T app node --input-type=module -e '
+            const page = await fetch("http://127.0.0.1:3000/");
+            if (!page.ok || !(await page.text()).includes("id=\"root\"")) {
+              throw new Error("Built client is unavailable");
+            }
+            const missing = await fetch("http://127.0.0.1:3000/api/missing");
+            if (missing.status !== 404) throw new Error("Unexpected API fallback");
+            console.log("Container smoke check passed");
+          '
+
+      - name: Show container logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down
