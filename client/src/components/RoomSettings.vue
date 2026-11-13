@@ -9,12 +9,18 @@ defineProps<{ room: RoomView; volume: number }>();
 const emit = defineEmits<{
   close: [];
   volumeChange: [value: number];
+  volumeCommit: [value: number];
   toggleVolume: [];
 }>();
 
 function updateVolume(value: number | number[]): void {
   if (typeof value === "number") emit("volumeChange", value);
 }
+
+function commitVolume(value: number | number[]): void {
+  if(typeof value==="number") emit("volumeCommit", value);
+}
+
 </script>
 
 <template>
@@ -50,6 +56,7 @@ function updateVolume(value: number | number[]): void {
           :model-value="volume"
           :show-tooltip="false"
           @update:model-value="updateVolume"
+          @change="commitVolume"
         />
 
         <div class="room-settings-volume-guide" aria-hidden="true">

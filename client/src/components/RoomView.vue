@@ -31,14 +31,26 @@ const videoVolume = ref(100);
 let lastAudibleVolume = 100;
 
 function setVideoVolume(value: number): void {
-  if (value > 0) lastAudibleVolume = value;
-
   videoVolume.value = value;
-  if (video.value) video.value.volume = value / 100;
+
+  if (video.value) {
+    video.value.volume = value / 100;
+  }
+}
+
+function rememberVideoVolume(value: number): void {
+  if (value > 0) {
+    lastAudibleVolume = value;
+  }
 }
 
 function toggleVideoVolume(): void {
-  setVideoVolume(videoVolume.value === 0 ? lastAudibleVolume : 0);
+  if (videoVolume.value === 0) {
+    setVideoVolume(lastAudibleVolume);
+  } else {
+    rememberVideoVolume(videoVolume.value);
+    setVideoVolume(0);
+  }
 }
 const playback = computed(() => roomStore.state.playback);
 const isPaused = computed(() => playback.value?.status === "paused");
@@ -390,6 +402,7 @@ async function copyInvite() {
       :volume="videoVolume"
       @volume-change="setVideoVolume"
       @toggle-volume="toggleVideoVolume"
+      @volume-commit="rememberVideoVolume"
     />
   </section>
 </template>
