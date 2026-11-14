@@ -18,6 +18,8 @@ import playIcon from "../assets/room/playIcon.svg";
 import pauseIcon from "../assets/room/pauseIcon.svg";
 import rewindLeftIcon from "../assets/room/rewindLeftIcon.svg";
 import rewindRightIcon from "../assets/room/rewindRightIcon.svg";
+import exitFullScreenIcon from "../assets/room/exitFullscreenIcon.svg";
+import fullscreenIcon from "../assets/room/fullscreenIcon.svg";
 import { useRoomStore } from "../useRoomStore.ts";
 
 const emit = defineEmits<{ leave: [] }>();
@@ -27,6 +29,37 @@ const demoUrl = "/media/demo.webm";
 const settingsOpen = ref(false);
 const roomStore = useRoomStore();
 const video = useTemplateRef<HTMLVideoElement>("video");
+const videoScreen = useTemplateRef<HTMLDivElement>("videoScreen");
+const isFullScreen = ref(false);
+
+function updateFullScreenState() {
+  isFullScreen.value = document.fullscreenElement == videoScreen.value;
+}
+
+async function toggleFullScreen() {
+  if (!videoScreen.value) {
+    return;
+  }
+  try {
+    if (document.fullscreenElement === videoScreen.value) {
+      await document.exitFullscreen();
+    } else {
+      await videoScreen.value.requestFullscreen();
+    }
+  } catch (error) {
+    console.log("Неудалось открыть полноэкранный режим", error);
+  }
+}
+const areControlsVisible = ref(false);
+let controlsTimeout: number | undefined;
+function showControls() {
+  areControlsVisible.value = true;
+  window.clearTimeout(controlsTimeout);
+  controlsTimeout = window.setTimeout(() => {
+    areControlsVisible.value = false;
+  }, 1000);
+}
+
 const videoVolume = ref(100);
 let lastAudibleVolume = 100;
 
@@ -171,7 +204,6 @@ function handleSpace(event: KeyboardEvent): void {
   if (
     !props.room ||
     !playback.value ||
-    event.code !== "Space" ||
     event.defaultPrevented ||
     event.ctrlKey ||
     event.metaKey ||
@@ -190,8 +222,11 @@ function handleSpace(event: KeyboardEvent): void {
     return;
   }
 
-  event.preventDefault();
-  if (!event.repeat) togglePlayback();
+  if (event.code === "Space") {
+    event.preventDefault();
+    showControls()
+    if (!event.repeat) togglePlayback();
+  }
 }
 
 function formatTime(seconds: number): string {
@@ -220,10 +255,12 @@ function detachPlayer() {
 
 onMounted(() => {
   attachPlayer();
+  document.addEventListener("fullscreenchange", updateFullScreenState);
   window.addEventListener("keydown", handleSpace);
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener("fullscreenchange", updateFullScreenState);
   window.removeEventListener("keydown", handleSpace);
   detachPlayer();
 });
@@ -265,6 +302,9 @@ async function copyInvite() {
         tabindex="0"
         role="group"
         aria-label="Видеоплеер"
+        ref="videoScreen"
+        @mousemove="showControls"
+        :class="{ 'room-view-screen-controls-visible': areControlsVisible }"
       >
         <video
           ref="video"
@@ -276,6 +316,7 @@ async function copyInvite() {
           @timeupdate="updateTimeline"
           @seeked="updateTimeline"
         />
+
         <p
           v-if="room"
           class="room-view-demo-credit"
@@ -286,6 +327,7 @@ async function copyInvite() {
             >Rockstar Games</a
           >
         </p>
+
         <div v-if="room" class="room-view-player-controls">
           <div class="room-view-player-buttons">
             <button
@@ -294,6 +336,7 @@ async function copyInvite() {
               aria-label="Назад на 15 секунд"
               :disabled="!playback || durationSeconds === 0"
               @click="roomStore.seekBy(-15_000, durationSeconds * 1000)"
+              @mousedown.prevent
             >
               <img :src="rewindLeftIcon" alt="" />
             </button>
@@ -304,6 +347,7 @@ async function copyInvite() {
               :aria-label="isPaused ? 'Играть' : 'Пауза'"
               :disabled="!playback"
               @click="togglePlayback"
+              @mousedown.prevent
             >
               <img :src="isPaused ? playIcon : pauseIcon" alt="" />
             </button>
@@ -314,6 +358,7 @@ async function copyInvite() {
               aria-label="Вперёд на 15 секунд"
               :disabled="!playback || durationSeconds === 0"
               @click="roomStore.seekBy(15_000, durationSeconds * 1000)"
+              @mousedown.prevent
             >
               <img :src="rewindRightIcon" alt="" />
             </button>
@@ -337,8 +382,25 @@ async function copyInvite() {
               {{ formatTime(seekPreview ?? currentSeconds) }} /
               {{ formatTime(durationSeconds) }}
             </span>
+            <button
+              type="button"
+              @click="toggleFullScreen"
+              class="room-view-fullscreen"
+              :aria-labal="
+                isFullScreen
+                  ? 'Войти в полноэкранный режим'
+                  : 'Свернуть полноэкраный режим'
+              "
+              @mousedown.prevent
+            >
+              <img
+                :src="isFullScreen ? exitFullScreenIcon : fullscreenIcon"
+                alt=""
+              />
+            </button>
           </div>
         </div>
+
         <p
           v-if="playbackNotice"
           class="room-view-playback-notice"
