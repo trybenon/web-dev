@@ -58,7 +58,7 @@ npm run start --workspace=server
 ```
 
 Проксирование /api в конфиге Vite настроено для разработки.
-Публикация приложения пока не настроена.
+Настройка production-деплоя описана ниже.
 
 ## Мониторинг ошибок в Bugsink
 
@@ -78,24 +78,45 @@ npm run start --workspace=server
 
 Клиент и сервер включают мониторинг независимо, когда задан их DSN. Для привязки ошибок к версии передайте один SHA коммита в `VITE_APP_RELEASE` при сборке клиента и в `APP_RELEASE` при запуске сервера. Для опубликованного сервера задайте `NODE_ENV=production`.
 
-### Загрузка source maps для Vue
+### Карты исходников клиента и сервера
 
-Соберите приложение командой `npm run build`. Затем выполните команду ниже отдельно и введите API-токен Bugsink с правом загрузки карт в выбранный проект.
+Автодеплой собирает клиент с `VITE_BUGSINK_DSN` и `VITE_APP_RELEASE`,
+сервер получает тот же SHA через `APP_RELEASE`. Сервер и shared создают
+source maps с исходным TypeScript внутри (`sourcesContent`). Debug ID
+сохраняются фильтром событий, поэтому Bugsink восстанавливает код из карт.
+
+Для production-сборки с мониторингом заполните в `.env` значения
+`APP_RELEASE`, `BUGSINK_DSN`, `BUGSINK_URL`, `BUGSINK_PROJECT` и
+`BUGSINK_AUTH_TOKEN` (шаблон — `.env.example`). Node.js на хосте не нужен.
+Сборка и запуск одной командой:
 
 ```bash
-read -rs BUGSINK_AUTH_TOKEN
+export APP_RELEASE="$(git rev-parse HEAD)"
+make run-release
+# Эквивалент без make:
+docker compose -f docker-compose.yml -f compose.release.yml up --build --detach --wait
 ```
 
-Запустите скрипт из корня репозитория. В `BUGSINK_URL` укажите адрес панели Bugsink, а в `BUGSINK_PROJECT` — slug проекта.
+Только собрать, не запуская контейнер:
 
 ```bash
-BUGSINK_URL='<АДРЕС_ПАНЕЛИ_BUGSINK>' \
-BUGSINK_PROJECT='<SLUG_ПРОЕКТА>' \
-SENTRY_AUTH_TOKEN="$BUGSINK_AUTH_TOKEN" \
-sh scripts/upload-bugsink-sourcemaps.sh
+make build-release
+# Эквивалент без make:
+docker compose -f docker-compose.yml -f compose.release.yml build app
 ```
 
-Скрипт добавляет одинаковые debug ID в JavaScript и карты из `client/dist` и загружает их в Bugsink. Для локальной проверки запустите `npm run preview -w client` на этой сборке. При деплое публикуйте JavaScript из той же сборки после загрузки карт.
+Compose запускает многостадийную Docker-сборку: установка зависимостей →
+компиляция → debug ID и манифест → проверка серверного события → загрузка
+карт в Bugsink → упаковка тех же JS-файлов без повторной компиляции.
+`BUGSINK_AUTH_TOKEN` доступен только инструкции загрузки через BuildKit
+secret; он не попадает в build args и образ. Ошибка загрузки останавливает
+сборку до запуска новой версии. Карты приложения в итоговый образ не входят.
+
+`make build-release` и `make run-release` повторяют загрузку карт при каждом
+вызове, сохраняя кеш компиляции. Для прямого Compose-вызова повторную
+загрузку уже закешированной версии можно принудить переменной
+`BUGSINK_UPLOAD_NONCE=$(date +%s)`. Настройки автодеплоя и проверки исходных
+`.vue`/`.ts` строк описаны в [инструкции](deploy/README.md).
 
 ## Проверка кода и форматирование
 
@@ -315,7 +336,9 @@ Vite и TypeScript при запуске не используются. Один
 Сборка выбирает архитектуру компьютера автоматически: на Apple Silicon —
 arm64, на Intel/AMD — amd64. Workflow `Docker` собирает и проверяет запуск
 обоих вариантов; arm64 на GitHub Runner проверяется через QEMU.
-Образы пока не публикуются и не деплоятся: это отдельная задача #43.
+После успешного CI на `main` образ публикуется в GHCR с тегом полного SHA
+коммита и развёртывается на VPS. Настройка, проверка и ручной откат описаны
+в [инструкции автодеплоя](deploy/README.md).
 
 Проверка готовности запрашивает `/api/health` внутри контейнера. Для запуска
 в фоне с ожиданием готовности:
@@ -349,7 +372,7 @@ HOST=0.0.0.0 позволяет принимать подключения чер
 
 Сервер предоставляет:
 
-- GET /api/health - ответ {"status":"ok"};
+- GET /api/health - ответ {"status":"ok"}; в образе автодеплоя также есть поле `sha` с полным SHA коммита (`APP_RELEASE`), ответ не кешируется;
 - GET / - HTML собранного клиента из client/dist;
 - GET /assets/... - JavaScript, CSS и другие файлы сборки;
 - GET /favicon.svg и GET /icons.svg - файлы иконок;

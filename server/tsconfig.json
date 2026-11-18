@@ -5,6 +5,8 @@
     "moduleResolution": "NodeNext",
     "rootDir": "src",
     "outDir": "dist",
+    "sourceMap": true,
+    "inlineSources": true,
     "types": ["node"],
     "strict": true,
     "noEmitOnError": true,

@@ -10,3 +10,5 @@ test-results
 *.tsbuildinfo
 *.zip
 *.patch
+.release
+**/__pycache__

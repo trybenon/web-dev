@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAppServer } from "./app.js";
 
 const html = "<!doctype html><html><body>Test page</body></html>";
@@ -297,6 +297,18 @@ describe("HTTP server", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(await response.json()).toEqual({ status: "ok" });
+  });
+
+  it("reports the deployed image SHA without caching it", async () => {
+    const sha = "a".repeat(40);
+    vi.stubEnv("APP_RELEASE", sha);
+    try {
+      const response = await fetch(`${baseUrl}/api/health`);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toEqual({ status: "ok", sha });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("returns 404 for an unknown path", async () => {

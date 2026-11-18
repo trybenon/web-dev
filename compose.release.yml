@@ -1,0 +1,20 @@
+services:
+  app:
+    image: ${APP_IMAGE:-watch-together:release}
+    build:
+      target: release
+      args:
+        APP_RELEASE: ${APP_RELEASE:?Set the full commit SHA}
+        BUGSINK_DSN: ${BUGSINK_DSN:?Set the Bugsink DSN}
+        BUGSINK_URL: ${BUGSINK_URL:?Set the Bugsink URL}
+        BUGSINK_PROJECT: ${BUGSINK_PROJECT:?Set the Bugsink project slug}
+        BUGSINK_UPLOAD_NONCE: ${BUGSINK_UPLOAD_NONCE:-}
+      secrets:
+        - bugsink_auth_token
+    restart: unless-stopped
+    environment:
+      BUGSINK_DSN: ${BUGSINK_DSN:?Set the Bugsink DSN}
+
+secrets:
+  bugsink_auth_token:
+    environment: BUGSINK_AUTH_TOKEN

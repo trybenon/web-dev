@@ -6,12 +6,13 @@ cd "$(dirname "$0")/.."
 : "${BUGSINK_URL:?Укажи URL Bugsink}"
 : "${BUGSINK_PROJECT:?Укажи имя проекта Bugsink}"
 : "${SENTRY_AUTH_TOKEN:?Передай API-токен Bugsink}"
+: "${APP_RELEASE:?Укажи полный SHA сборки}"
 
-if [ ! -d client/dist ] || [ -z "$(find client/dist -type f -name '*.js.map')" ]; then
-  printf '%s\n' "В client/dist нет карт. Сначала выполни npm run build." >&2
-  exit 1
-fi
+node scripts/verify-release.mjs .release
 
-npx --yes @sentry/cli@2 sourcemaps inject client/dist
-npx --yes @sentry/cli@2 --url "$BUGSINK_URL" sourcemaps \
-  --org bugsinkhasnoorgs --project "$BUGSINK_PROJECT" upload client/dist
+node node_modules/@sentry/cli/bin/sentry-cli --url "$BUGSINK_URL" sourcemaps \
+  --org bugsinkhasnoorgs --project "$BUGSINK_PROJECT" upload --strict --wait \
+  .release
+
+# Uploading must not change the files that will be packaged in Docker.
+node scripts/verify-release.mjs .release

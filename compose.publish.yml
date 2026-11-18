@@ -1,0 +1,7 @@
+# Add after compose.release.yml when publishing both server architectures.
+services:
+  app:
+    build:
+      platforms:
+        - linux/amd64
+        - linux/arm64
