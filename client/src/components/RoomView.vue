@@ -50,7 +50,24 @@ async function toggleFullScreen() {
     console.log("Неудалось открыть полноэкранный режим", error);
   }
 }
+
+function seekBySeconds(seconds: number) {
+  roomStore.seekBy(seconds * 1000, durationSeconds.value * 1000);
+}
+
+function handleVideoDoubleClick(event: MouseEvent) {
+  if (!videoScreen.value) return;
+  const rect = videoScreen.value.getBoundingClientRect();
+  const mid = rect.left + rect.width / 2;
+  if (event.clientX >= mid) {
+    seekBySeconds(15);
+  } else {
+    seekBySeconds(-15);
+  }
+}
+
 const areControlsVisible = ref(false);
+
 let controlsTimeout: number | undefined;
 function showControls() {
   areControlsVisible.value = true;
@@ -221,10 +238,23 @@ function handleSpace(event: KeyboardEvent): void {
   ) {
     return;
   }
+  if (event.code === "KeyF") {
+    if (!event.repeat) toggleFullScreen();
+  }
+
+  if (event.code === "KeyJ" || event.code === "ArrowLeft") {
+    showControls();
+    if (!event.repeat) seekBySeconds(-15);
+  }
+
+  if (event.code === "KeyL" || event.code === "ArrowRight") {
+    showControls();
+    if (!event.repeat) seekBySeconds(15);
+  }
 
   if (event.code === "Space") {
     event.preventDefault();
-    showControls()
+    showControls();
     if (!event.repeat) togglePlayback();
   }
 }
@@ -315,6 +345,7 @@ async function copyInvite() {
           @durationchange="updateTimeline"
           @timeupdate="updateTimeline"
           @seeked="updateTimeline"
+          @dblclick="handleVideoDoubleClick"
         />
 
         <p
@@ -335,7 +366,7 @@ async function copyInvite() {
               class="room-view-player-button room-view-player-skip"
               aria-label="Назад на 15 секунд"
               :disabled="!playback || durationSeconds === 0"
-              @click="roomStore.seekBy(-15_000, durationSeconds * 1000)"
+              @click="seekBySeconds(-15)"
               @mousedown.prevent
             >
               <img :src="rewindLeftIcon" alt="" />
@@ -357,7 +388,7 @@ async function copyInvite() {
               class="room-view-player-button room-view-player-skip"
               aria-label="Вперёд на 15 секунд"
               :disabled="!playback || durationSeconds === 0"
-              @click="roomStore.seekBy(15_000, durationSeconds * 1000)"
+              @click="seekBySeconds(15)"
               @mousedown.prevent
             >
               <img :src="rewindRightIcon" alt="" />
