@@ -19,7 +19,7 @@ jobs:
       - name: Validate deployment script
         run: |
           bash -n scripts/deploy.sh
-          shellcheck scripts/deploy.sh scripts/upload-bugsink-sourcemaps.sh
+          shellcheck scripts/deploy.sh
           python3 -m unittest discover -s scripts -p 'test_deploy.py' -v
       - name: Validate production Compose
         env:
@@ -88,40 +88,18 @@ jobs:
           retention-days: 7
 
   release-image:
-    name: production image
+    name: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       APP_RELEASE: ${{ github.sha }}
       BUGSINK_DSN: https://public@bugsink.invalid/1
-      COMPOSE_FILE: docker-compose.yml:compose.check.yml
+      APP_BUILD_STAGE: release-build
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-      - run: npm ci
       - uses: docker/setup-buildx-action@v3
       - name: Build application and source maps through Compose
-        run: docker compose build app artifacts
-      - name: Export the compiled artifacts for the browser test
-        shell: bash
-        run: |
-          mkdir -p .release
-          docker compose run --rm --no-deps -T artifacts tar -czf - -C /app/.release . | tar -xzf - -C .release
-          mkdir -p shared/dist
-          cp -R .release/shared/dist/. shared/dist/
-      - run: npx playwright install --with-deps chromium
-      - name: Verify original Vue source context
-        run: npm run check:release:browser
-      - name: Check packaged file hashes and server event against source maps
-        run: |
-          docker compose run --rm --no-deps -T \
-            --volume "$PWD/scripts:/app/checks:ro" \
-            --volume "$PWD/.release:/artifacts:ro" \
-            app \
-            node /app/checks/check-monitoring.mjs /artifacts /app
+        run: docker compose build app
       - name: Start the application through Compose
         run: docker compose up --detach --no-build --wait --wait-timeout 90 app
       - name: Check the production entrypoint

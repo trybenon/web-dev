@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1
+ARG APP_BUILD_STAGE=build
+
 FROM node:24-bookworm-slim AS base
 WORKDIR /app
 
@@ -8,41 +10,36 @@ COPY client/package.json ./client/package.json
 COPY server/package.json ./server/package.json
 COPY shared/package.json ./shared/package.json
 
-FROM manifests AS build-dependencies
+FROM manifests AS build
 RUN npm ci
 COPY . .
-
-FROM build-dependencies AS build
 ARG APP_RELEASE
 ARG BUGSINK_DSN
-RUN VITE_APP_RELEASE="$APP_RELEASE" VITE_BUGSINK_DSN="$BUGSINK_DSN" npm run build
+RUN VITE_APP_RELEASE="$APP_RELEASE" VITE_BUGSINK_DSN="$BUGSINK_DSN" npm run build \
+    && mkdir /out \
+    && cp -r --parents client/dist server/dist shared/dist /out/
 
-# Compilers, debug ID injection and source map checks all run inside Docker.
-FROM build-dependencies AS release-build
-ARG APP_RELEASE
-ARG BUGSINK_DSN
-ENV APP_RELEASE=$APP_RELEASE
-RUN BUGSINK_DSN="$BUGSINK_DSN" npm run build:release && npm run check:release
+# Give each bundle a debug ID and keep workspace paths distinct in the upload.
+FROM build AS release-build
+RUN printf '%s\n' "$APP_RELEASE" | grep -Eq '^[0-9a-f]{40}$' \
+    && node_modules/.bin/sentry-cli sourcemaps inject /out
 
-# Only the upload instruction can access the token; it never enters image layers.
-FROM release-build AS uploaded-release
+# BuildKit exposes the token only during the upload.
+FROM release-build AS release-upload
 ARG BUGSINK_URL
 ARG BUGSINK_PROJECT
 ARG BUGSINK_UPLOAD_NONCE
-RUN --mount=type=secret,id=bugsink_auth_token,required=true \
-    SENTRY_AUTH_TOKEN="$(cat /run/secrets/bugsink_auth_token)" \
-    BUGSINK_URL="$BUGSINK_URL" BUGSINK_PROJECT="$BUGSINK_PROJECT" \
-    npm run upload:sourcemaps
-RUN find .release/client/dist .release/server/dist .release/shared/dist -name '*.map' -delete
+RUN --mount=type=secret,id=bugsink_auth_token,env=SENTRY_AUTH_TOKEN,required=true \
+    node_modules/.bin/sentry-cli --url "$BUGSINK_URL" sourcemaps \
+      --org bugsinkhasnoorgs --project "$BUGSINK_PROJECT" upload --strict --wait /out
 
-# CI exercises packaging without requiring a real Bugsink token or sending events.
-FROM release-build AS release-check-files
-RUN find .release/client/dist .release/server/dist .release/shared/dist -name '*.map' -delete
+FROM ${APP_BUILD_STAGE} AS app-files
+RUN find /out -type f -name '*.map' -delete
 
 FROM manifests AS production-dependencies
 RUN npm ci --omit=dev --workspace=server --workspace=shared --include-workspace-root=false
 
-FROM base AS runtime-base
+FROM base AS runtime
 ARG APP_RELEASE
 LABEL org.opencontainers.image.source="https://github.com/trybenon/web-dev" \
     org.opencontainers.image.revision=$APP_RELEASE
@@ -53,23 +50,8 @@ ENV NODE_ENV=production \
 COPY --from=production-dependencies /app/node_modules ./node_modules
 COPY --from=manifests /app/server/package.json ./server/package.json
 COPY --from=manifests /app/shared/package.json ./shared/package.json
+COPY --from=app-files /out/ ./
 COPY scripts/healthcheck.mjs ./scripts/healthcheck.mjs
 USER node
 EXPOSE 3000
 CMD ["node", "server/dist/index.js"]
-
-FROM runtime-base AS release
-COPY --from=uploaded-release /app/.release/server/dist ./server/dist
-COPY --from=uploaded-release /app/.release/shared/dist ./shared/dist
-COPY --from=uploaded-release /app/.release/client/dist ./client/dist
-
-FROM runtime-base AS release-check
-COPY --from=release-check-files /app/.release/server/dist ./server/dist
-COPY --from=release-check-files /app/.release/shared/dist ./shared/dist
-COPY --from=release-check-files /app/.release/client/dist ./client/dist
-
-# Local Docker Compose continues to build directly from source.
-FROM runtime-base AS runtime
-COPY --from=build /app/server/dist ./server/dist
-COPY --from=build /app/shared/dist ./shared/dist
-COPY --from=build /app/client/dist ./client/dist

@@ -38,8 +38,7 @@ jobs:
           - arch: arm64
             platform: linux/arm64
     env:
-      COMPOSE_FILE: docker-compose.yml:compose.platform.yml
-      BUILD_PLATFORM: ${{ matrix.platform }}
+      DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

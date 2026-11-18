@@ -1,10 +1,11 @@
 services:
   app:
-    image: watch-together:local
+    image: ${APP_IMAGE:-watch-together:local}
     build:
       context: .
       target: runtime
       args:
+        APP_BUILD_STAGE: ${APP_BUILD_STAGE:-build}
         APP_RELEASE: ${APP_RELEASE:-}
         BUGSINK_DSN: ${BUGSINK_DSN:-}
     init: true

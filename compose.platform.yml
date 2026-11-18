@@ -1,7 +1,0 @@
-# Single architecture builds for the Docker CI matrix.
-services:
-  app:
-    platform: ${BUILD_PLATFORM:?Set BUILD_PLATFORM}
-    build:
-      platforms:
-        - ${BUILD_PLATFORM:?Set BUILD_PLATFORM}

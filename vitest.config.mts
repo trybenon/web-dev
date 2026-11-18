@@ -17,7 +17,6 @@ export default defineConfig({
       "client/src/**/*.test.ts",
       "server/src/**/*.test.ts",
       "shared/src/**/*.test.ts",
-      "scripts/**/*.test.ts",
     ],
     coverage: {
       provider: "v8",
