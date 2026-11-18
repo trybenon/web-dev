@@ -24,11 +24,15 @@ FROM build AS release-build
 RUN printf '%s\n' "$APP_RELEASE" | grep -Eq '^[0-9a-f]{40}$' \
     && node_modules/.bin/sentry-cli sourcemaps inject /out
 
-# BuildKit exposes the token only during the upload.
 FROM release-build AS release-upload
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 ARG BUGSINK_URL
 ARG BUGSINK_PROJECT
 ARG BUGSINK_UPLOAD_NONCE
+# BuildKit exposes the token only during the upload.
 RUN --mount=type=secret,id=bugsink_auth_token,env=SENTRY_AUTH_TOKEN,required=true \
     node_modules/.bin/sentry-cli --url "$BUGSINK_URL" sourcemaps \
       --org bugsinkhasnoorgs --project "$BUGSINK_PROJECT" upload --strict --wait /out
