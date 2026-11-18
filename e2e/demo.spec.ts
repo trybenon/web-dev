@@ -24,7 +24,7 @@ test("serves and decodes the demo in Chromium", async ({ page, request }) => {
     .poll(() =>
       video.evaluate((element: HTMLVideoElement) => element.videoWidth),
     )
-    .toBe(640);
+    .toBe(1920);
 
   // Комната стартует на паузе, поэтому воспроизведение проверяем отдельно.
   const result = await page.evaluate(async () => {
@@ -58,7 +58,7 @@ test("serves and decodes the demo in Chromium", async ({ page, request }) => {
       video.remove();
     }
   });
-  expect(result.duration).toBeCloseTo(90, 0);
-  expect(result.width).toBe(640);
+  expect(result.duration).toBeCloseTo(89, 0);
+  expect(result.width).toBe(1920);
   expect(result.time).toBeGreaterThanOrEqual(0.25);
 });

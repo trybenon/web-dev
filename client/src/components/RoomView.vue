@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
+import { captureException } from "@sentry/vue";
 import type { PlayerBridge, RoomView } from "../sync";
 import RoomSettings from "./RoomSettings.vue";
 import {
@@ -18,27 +19,103 @@ import playIcon from "../assets/room/playIcon.svg";
 import pauseIcon from "../assets/room/pauseIcon.svg";
 import rewindLeftIcon from "../assets/room/rewindLeftIcon.svg";
 import rewindRightIcon from "../assets/room/rewindRightIcon.svg";
+import exitFullScreenIcon from "../assets/room/exitFullscreenIcon.svg";
+import fullscreenIcon from "../assets/room/fullscreenIcon.svg";
 import { useRoomStore } from "../useRoomStore.ts";
 
 const emit = defineEmits<{ leave: [] }>();
 const props = defineProps<{ room: RoomView | null }>();
 
 const demoUrl = "/media/demo.webm";
+const demoLoadFailed = ref(false);
 const settingsOpen = ref(false);
 const roomStore = useRoomStore();
 const video = useTemplateRef<HTMLVideoElement>("video");
+const videoScreen = useTemplateRef<HTMLDivElement>("videoScreen");
+const isFullScreen = ref(false);
+
+function updateFullScreenState() {
+  isFullScreen.value = document.fullscreenElement == videoScreen.value;
+}
+
+async function toggleFullScreen(): Promise<void> {
+  const screen = videoScreen.value;
+  if (!screen) return;
+
+  const exiting = document.fullscreenElement === screen;
+
+  if (!exiting && !document.fullscreenEnabled) {
+    ElMessage.warning("Полноэкранный режим недоступен");
+    return;
+  }
+
+  try {
+    if (exiting) {
+      await document.exitFullscreen();
+    } else {
+      await screen.requestFullscreen();
+    }
+  } catch (error) {
+    captureException(error);
+    ElMessage.error({
+      message: exiting
+        ? "Не удалось выйти из полноэкранного режима"
+        : "Не удалось открыть полноэкранный режим",
+      appendTo: document.fullscreenElement === screen ? screen : document.body,
+    });
+  }
+}
+
+function seekBySeconds(seconds: number) {
+  roomStore.seekBy(seconds * 1000, durationSeconds.value * 1000);
+}
+
+function handleVideoDoubleClick(event: MouseEvent) {
+  if (!videoScreen.value) return;
+  const rect = videoScreen.value.getBoundingClientRect();
+  const mid = rect.left + rect.width / 2;
+  if (event.clientX >= mid) {
+    seekBySeconds(15);
+  } else {
+    seekBySeconds(-15);
+  }
+}
+
+const areControlsVisible = ref(false);
+
+let controlsTimeout: number | undefined;
+function showControls() {
+  areControlsVisible.value = true;
+  window.clearTimeout(controlsTimeout);
+  controlsTimeout = window.setTimeout(() => {
+    areControlsVisible.value = false;
+  }, 1000);
+}
+
 const videoVolume = ref(100);
 let lastAudibleVolume = 100;
 
 function setVideoVolume(value: number): void {
-  if (value > 0) lastAudibleVolume = value;
-
   videoVolume.value = value;
-  if (video.value) video.value.volume = value / 100;
+
+  if (video.value) {
+    video.value.volume = value / 100;
+  }
+}
+
+function rememberVideoVolume(value: number): void {
+  if (value > 0) {
+    lastAudibleVolume = value;
+  }
 }
 
 function toggleVideoVolume(): void {
-  setVideoVolume(videoVolume.value === 0 ? lastAudibleVolume : 0);
+  if (videoVolume.value === 0) {
+    setVideoVolume(lastAudibleVolume);
+  } else {
+    rememberVideoVolume(videoVolume.value);
+    setVideoVolume(0);
+  }
 }
 const playback = computed(() => roomStore.state.playback);
 const isPaused = computed(() => playback.value?.status === "paused");
@@ -135,6 +212,16 @@ function updateTimeline(): void {
   currentSeconds.value = element.currentTime;
 }
 
+function handleDemoError(): void {
+  const mediaError = video.value?.error;
+  if (!mediaError || mediaError.code === mediaError.MEDIA_ERR_ABORTED) {
+    return;
+  }
+
+  demoLoadFailed.value = true;
+  captureException(new Error("Не удалось загрузить демо-видео"));
+}
+
 function previewSeek(event: Event): void {
   seekPreview.value = (event.currentTarget as HTMLInputElement).valueAsNumber;
 }
@@ -143,6 +230,29 @@ function commitSeek(event: Event): void {
   const seconds = (event.currentTarget as HTMLInputElement).valueAsNumber;
   seekPreview.value = null;
   roomStore.seek(Math.round(seconds * 1000));
+}
+
+const seekPointer = ref<{ id: number; slider: HTMLInputElement }>();
+
+function startSeekPointer(event: PointerEvent): void {
+  const slider = event.currentTarget;
+  if (event.button !== 0 || !(slider instanceof HTMLInputElement)) return;
+
+  seekPointer.value = { id: event.pointerId, slider };
+}
+
+function releaseSeekFocus(event: PointerEvent): void {
+  const pointer = seekPointer.value;
+  if (!pointer || pointer.id !== event.pointerId) return;
+
+  seekPointer.value = undefined;
+  pointer.slider.blur();
+  videoScreen.value?.blur();
+  showControls();
+}
+
+function releaseScreenClickFocus(event: MouseEvent): void {
+  if (event.detail > 0) videoScreen.value?.blur();
 }
 
 function togglePlayback(): void {
@@ -159,7 +269,6 @@ function handleSpace(event: KeyboardEvent): void {
   if (
     !props.room ||
     !playback.value ||
-    event.code !== "Space" ||
     event.defaultPrevented ||
     event.ctrlKey ||
     event.metaKey ||
@@ -177,9 +286,25 @@ function handleSpace(event: KeyboardEvent): void {
   ) {
     return;
   }
+  if (event.code === "KeyF") {
+    if (!event.repeat) toggleFullScreen();
+  }
 
-  event.preventDefault();
-  if (!event.repeat) togglePlayback();
+  if (event.code === "KeyJ" || event.code === "ArrowLeft") {
+    showControls();
+    if (!event.repeat) seekBySeconds(-15);
+  }
+
+  if (event.code === "KeyL" || event.code === "ArrowRight") {
+    showControls();
+    if (!event.repeat) seekBySeconds(15);
+  }
+
+  if (event.code === "Space") {
+    event.preventDefault();
+    showControls();
+    if (!event.repeat) togglePlayback();
+  }
 }
 
 function formatTime(seconds: number): string {
@@ -208,12 +333,18 @@ function detachPlayer() {
 
 onMounted(() => {
   attachPlayer();
+  document.addEventListener("fullscreenchange", updateFullScreenState);
   window.addEventListener("keydown", handleSpace);
+  window.addEventListener("pointerup", releaseSeekFocus);
+  window.addEventListener("pointercancel", releaseSeekFocus);
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener("fullscreenchange", updateFullScreenState);
   window.removeEventListener("keydown", handleSpace);
   detachPlayer();
+  window.removeEventListener("pointerup", releaseSeekFocus);
+  window.removeEventListener("pointercancel", releaseSeekFocus);
 });
 
 watch(
@@ -253,6 +384,13 @@ async function copyInvite() {
         tabindex="0"
         role="group"
         aria-label="Видеоплеер"
+        ref="videoScreen"
+        @mousemove="showControls"
+        @click="releaseScreenClickFocus"
+        :class="{
+          'room-view-screen-controls-visible':
+            areControlsVisible || seekPointer !== undefined,
+        }"
       >
         <video
           ref="video"
@@ -263,7 +401,11 @@ async function copyInvite() {
           @durationchange="updateTimeline"
           @timeupdate="updateTimeline"
           @seeked="updateTimeline"
+          @dblclick="handleVideoDoubleClick"
+          @error="handleDemoError"
+          @loadeddata="demoLoadFailed = false"
         />
+
         <p
           v-if="room"
           class="room-view-demo-credit"
@@ -274,6 +416,7 @@ async function copyInvite() {
             >Rockstar Games</a
           >
         </p>
+
         <div v-if="room" class="room-view-player-controls">
           <div class="room-view-player-buttons">
             <button
@@ -281,7 +424,8 @@ async function copyInvite() {
               class="room-view-player-button room-view-player-skip"
               aria-label="Назад на 15 секунд"
               :disabled="!playback || durationSeconds === 0"
-              @click="roomStore.seekBy(-15_000, durationSeconds * 1000)"
+              @click="seekBySeconds(-15)"
+              @mousedown.prevent
             >
               <img :src="rewindLeftIcon" alt="" />
             </button>
@@ -292,6 +436,7 @@ async function copyInvite() {
               :aria-label="isPaused ? 'Играть' : 'Пауза'"
               :disabled="!playback"
               @click="togglePlayback"
+              @mousedown.prevent
             >
               <img :src="isPaused ? playIcon : pauseIcon" alt="" />
             </button>
@@ -301,7 +446,8 @@ async function copyInvite() {
               class="room-view-player-button room-view-player-skip"
               aria-label="Вперёд на 15 секунд"
               :disabled="!playback || durationSeconds === 0"
-              @click="roomStore.seekBy(15_000, durationSeconds * 1000)"
+              @click="seekBySeconds(15)"
+              @mousedown.prevent
             >
               <img :src="rewindRightIcon" alt="" />
             </button>
@@ -320,13 +466,35 @@ async function copyInvite() {
               @input="previewSeek"
               @change="commitSeek"
               @pointercancel="seekPreview = null"
+              @pointerdown="startSeekPointer"
             />
             <span class="room-view-time">
               {{ formatTime(seekPreview ?? currentSeconds) }} /
               {{ formatTime(durationSeconds) }}
             </span>
+            <button
+              type="button"
+              @click="toggleFullScreen"
+              class="room-view-fullscreen"
+              :aria-label="
+                isFullScreen
+                  ? 'Свернуть полноэкраный режим'
+                  : 'Войти в полноэкранный режим'
+              "
+              @mousedown.prevent
+            >
+              <img
+                :src="isFullScreen ? exitFullScreenIcon : fullscreenIcon"
+                alt=""
+              />
+            </button>
           </div>
         </div>
+
+        <p v-if="demoLoadFailed" class="room-view-playback-notice" role="alert">
+          Не удалось загрузить демо-видео
+        </p>
+
         <p
           v-if="playbackNotice"
           class="room-view-playback-notice"
@@ -341,7 +509,12 @@ async function copyInvite() {
 
       <div class="room-view-toolbar">
         <div class="room-view-toolbar-left">
-          <el-tooltip content="Выйти" placement="top" :show-arrow="false">
+          <el-tooltip
+            content="Выйти"
+            placement="top"
+            :show-arrow="false"
+            popper-class="room-toolbar-tooltip"
+          >
             <el-button
               class="room-view-action"
               aria-label="Выйти из комнаты"
@@ -356,6 +529,7 @@ async function copyInvite() {
             content="Скопировать ссылку"
             placement="top"
             :show-arrow="false"
+            popper-class="room-toolbar-tooltip"
           >
             <el-button
               class="room-view-action"
@@ -367,7 +541,12 @@ async function copyInvite() {
           </el-tooltip>
         </div>
 
-        <el-tooltip content="Настройки" placement="top" :show-arrow="false">
+        <el-tooltip
+          content="Настройки"
+          placement="top"
+          :show-arrow="false"
+          popper-class="room-toolbar-tooltip"
+        >
           <span class="room-view-action-trigger">
             <el-button
               class="room-view-action"
@@ -390,6 +569,7 @@ async function copyInvite() {
       :volume="videoVolume"
       @volume-change="setVideoVolume"
       @toggle-volume="toggleVideoVolume"
+      @volume-commit="rememberVideoVolume"
     />
   </section>
 </template>

@@ -38,10 +38,20 @@
 }
 
 .room-entry-input {
-  --el-input-height: 34px;
-  --el-input-border-radius: 10px;
+  --el-input-height: 32px;
+  --el-input-border-radius: 9px;
+  --el-input-border-color: transparent;
+  --el-input-hover-border-color: transparent;
+  --el-input-focus-border-color: transparent;
 
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   font-size: 18px;
+}
+
+.room-entry-input:focus-within {
+  border-color: color-mix(in srgb, var(--border) 55%, white);
 }
 
 .room-entry-submit {

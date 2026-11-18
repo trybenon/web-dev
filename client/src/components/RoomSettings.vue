@@ -9,11 +9,16 @@ defineProps<{ room: RoomView; volume: number }>();
 const emit = defineEmits<{
   close: [];
   volumeChange: [value: number];
+  volumeCommit: [value: number];
   toggleVolume: [];
 }>();
 
 function updateVolume(value: number | number[]): void {
   if (typeof value === "number") emit("volumeChange", value);
+}
+
+function commitVolume(value: number | number[]): void {
+  if (typeof value === "number") emit("volumeCommit", value);
 }
 </script>
 
@@ -25,7 +30,15 @@ function updateVolume(value: number | number[]): void {
       aria-label="Закрыть настройки"
       @click="emit('close')"
     >
-      ×
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M3.5 3.5l9 9m0-9l-9 9"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </svg>
     </el-button>
 
     <ParticipantList :peers="room.peers" :you="room.you" />
@@ -50,6 +63,7 @@ function updateVolume(value: number | number[]): void {
           :model-value="volume"
           :show-tooltip="false"
           @update:model-value="updateVolume"
+          @change="commitVolume"
         />
 
         <div class="room-settings-volume-guide" aria-hidden="true">
