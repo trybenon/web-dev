@@ -30,7 +30,15 @@ function commitVolume(value: number | number[]): void {
       aria-label="Закрыть настройки"
       @click="emit('close')"
     >
-      ×
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M3.5 3.5l9 9m0-9l-9 9"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        />
+      </svg>
     </el-button>
 
     <ParticipantList :peers="room.peers" :you="room.you" />

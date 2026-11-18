@@ -207,6 +207,23 @@ function commitSeek(event: Event): void {
   roomStore.seek(Math.round(seconds * 1000));
 }
 
+let seekPointer: { id: number; slider: HTMLInputElement } | undefined;
+
+function startSeekPointer(event: PointerEvent): void {
+  const slider = event.currentTarget;
+  if (event.button !== 0 || !(slider instanceof HTMLInputElement)) return;
+
+  seekPointer = { id: event.pointerId, slider };
+}
+
+function releaseSeekFocus(event: PointerEvent): void {
+  if (seekPointer?.id !== event.pointerId) return;
+
+  const { slider } = seekPointer;
+  seekPointer = undefined;
+  window.requestAnimationFrame(() => slider.blur());
+}
+
 function togglePlayback(): void {
   if (!playback.value) return;
 
@@ -287,12 +304,16 @@ onMounted(() => {
   attachPlayer();
   document.addEventListener("fullscreenchange", updateFullScreenState);
   window.addEventListener("keydown", handleSpace);
+  window.addEventListener("pointerup", releaseSeekFocus);
+  window.addEventListener("pointercancel", releaseSeekFocus);
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener("fullscreenchange", updateFullScreenState);
   window.removeEventListener("keydown", handleSpace);
   detachPlayer();
+  window.removeEventListener("pointerup", releaseSeekFocus);
+  window.removeEventListener("pointercancel", releaseSeekFocus);
 });
 
 watch(
@@ -408,6 +429,7 @@ async function copyInvite() {
               @input="previewSeek"
               @change="commitSeek"
               @pointercancel="seekPreview = null"
+              @pointerdown="startSeekPointer"
             />
             <span class="room-view-time">
               {{ formatTime(seekPreview ?? currentSeconds) }} /
@@ -446,7 +468,12 @@ async function copyInvite() {
 
       <div class="room-view-toolbar">
         <div class="room-view-toolbar-left">
-          <el-tooltip content="Выйти" placement="top" :show-arrow="false">
+          <el-tooltip
+            content="Выйти"
+            placement="top"
+            :show-arrow="false"
+            popper-class="room-toolbar-tooltip"
+          >
             <el-button
               class="room-view-action"
               aria-label="Выйти из комнаты"
@@ -461,6 +488,7 @@ async function copyInvite() {
             content="Скопировать ссылку"
             placement="top"
             :show-arrow="false"
+            popper-class="room-toolbar-tooltip"
           >
             <el-button
               class="room-view-action"
@@ -472,7 +500,12 @@ async function copyInvite() {
           </el-tooltip>
         </div>
 
-        <el-tooltip content="Настройки" placement="top" :show-arrow="false">
+        <el-tooltip
+          content="Настройки"
+          placement="top"
+          :show-arrow="false"
+          popper-class="room-toolbar-tooltip"
+        >
           <span class="room-view-action-trigger">
             <el-button
               class="room-view-action"

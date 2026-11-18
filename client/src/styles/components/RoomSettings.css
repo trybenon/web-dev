@@ -13,9 +13,12 @@
   height: 28px;
   margin-bottom: 6px;
   padding: 0;
+  border-radius: 8px;
   color: var(--accent);
-  font-size: 24px;
-  font-weight: 400;
+}
+
+.room-settings-close svg {
+  display: block;
 }
 
 .room-settings-volume {

@@ -183,3 +183,9 @@ code {
   inset: -15px 0;
   content: "";
 }
+
+html.dark .el-popper.room-toolbar-tooltip {
+  color: #fff;
+  background-color: var(--surface);
+  border-color: var(--surface);
+}
