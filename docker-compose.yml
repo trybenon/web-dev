@@ -1,14 +1,19 @@
 services:
   app:
-    image: watch-together:local
+    image: ${APP_IMAGE:-watch-together:local}
     build:
       context: .
       target: runtime
+      args:
+        APP_BUILD_STAGE: ${APP_BUILD_STAGE:-build}
+        APP_RELEASE: ${APP_RELEASE:-}
+        BUGSINK_DSN: ${BUGSINK_DSN:-}
     init: true
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "3000"
+      BUGSINK_DSN: ${BUGSINK_DSN:-}
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
     healthcheck:

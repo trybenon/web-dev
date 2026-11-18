@@ -1,0 +1,126 @@
+name: Deploy
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DEPLOY_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Skip superseded commits
+        id: version
+        shell: bash
+        run: |
+          current=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$current" != "$DEPLOY_SHA" ]]; then
+            echo "A newer main commit exists; skipping $DEPLOY_SHA"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate monitoring configuration
+        if: steps.version.outputs.current == 'true'
+        env:
+          BUGSINK_DSN: ${{ secrets.BUGSINK_DSN }}
+          BUGSINK_AUTH_TOKEN: ${{ secrets.BUGSINK_AUTH_TOKEN }}
+          BUGSINK_URL: ${{ vars.BUGSINK_URL }}
+          BUGSINK_PROJECT: ${{ vars.BUGSINK_PROJECT }}
+        run: |
+          : "${BUGSINK_DSN:?Add BUGSINK_DSN secret}"
+          : "${BUGSINK_AUTH_TOKEN:?Add BUGSINK_AUTH_TOKEN secret}"
+          : "${BUGSINK_URL:?Add BUGSINK_URL repository variable}"
+          : "${BUGSINK_PROJECT:?Add BUGSINK_PROJECT repository variable}"
+
+      - name: Setup Node.js
+        if: steps.version.outputs.current == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Enable ARM emulation
+        if: steps.version.outputs.current == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.version.outputs.current == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.version.outputs.current == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build, upload source maps and publish through Compose
+        if: steps.version.outputs.current == 'true'
+        env:
+          APP_IMAGE: ${{ steps.version.outputs.image }}:${{ github.sha }}
+          APP_RELEASE: ${{ github.sha }}
+          BUGSINK_DSN: ${{ secrets.BUGSINK_DSN }}
+          BUGSINK_URL: ${{ vars.BUGSINK_URL }}
+          BUGSINK_PROJECT: ${{ vars.BUGSINK_PROJECT }}
+          BUGSINK_AUTH_TOKEN: ${{ secrets.BUGSINK_AUTH_TOKEN }}
+          BUGSINK_UPLOAD_NONCE: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: docker compose -f docker-compose.yml -f compose.release.yml -f compose.publish.yml build --push app
+
+      - name: Deploy and check public SHA (roll back on failure)
+        if: steps.version.outputs.current == 'true'
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_IMAGE: ${{ steps.version.outputs.image }}:${{ github.sha }}
+          BUGSINK_DSN: ${{ secrets.BUGSINK_DSN }}
+        run: |
+          # Recheck after building; an older build must not replace a newer main.
+          current=$(git ls-remote origin refs/heads/main | cut -f1)
+          [[ "$current" == "$DEPLOY_SHA" ]] || exit 0
+          : "${DEPLOY_HOST:?Add DEPLOY_HOST secret}"
+          : "${DEPLOY_USER:?Add DEPLOY_USER secret}"
+          : "${DEPLOY_SSH_KEY:?Add DEPLOY_SSH_KEY secret}"
+          : "${DEPLOY_KNOWN_HOSTS:?Add DEPLOY_KNOWN_HOSTS secret}"
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.:-]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          install -m 700 -d "$RUNNER_TEMP/deploy-ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/deploy-ssh/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/deploy-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/deploy-ssh/"*
+          trap 'rm -rf "$RUNNER_TEMP/deploy-ssh"' EXIT
+          node scripts/write-monitoring-env.mjs "$RUNNER_TEMP/deploy-ssh/monitoring.env"
+          ssh_options=(-i "$RUNNER_TEMP/deploy-ssh/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/deploy-ssh/known_hosts" -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          destination="$DEPLOY_USER@$DEPLOY_HOST"
+          incoming="/opt/watch-together-deploy/incoming/$DEPLOY_SHA"
+          # Paths intentionally expand on the runner; SHA is validated above.
+          # shellcheck disable=SC2029
+          tar -czf - deploy/compose.yml scripts/deploy.sh -C "$RUNNER_TEMP/deploy-ssh" monitoring.env |
+            ssh "${ssh_options[@]}" "$destination" "umask 077; mkdir -p '$incoming' && tar -xzf - -C '$incoming'"
+          # systemd owns the process and logs so rollback survives a runner disconnect.
+          # shellcheck disable=SC2029
+          ssh "${ssh_options[@]}" "$destination" \
+            "result=0; systemd-run --quiet --wait --collect --property=RuntimeMaxSec=10min --property=TimeoutStopSec=5min --unit=watch-together-deploy-$DEPLOY_SHA bash '$incoming/scripts/deploy.sh' '$DEPLOY_IMAGE' '$DEPLOY_SHA' '$incoming/deploy/compose.yml' /opt/watch-together-deploy https://krozmo.online/api/health '$incoming/monitoring.env' || result=\$?; journalctl --no-pager -u watch-together-deploy-$DEPLOY_SHA -n 100; exit \$result"

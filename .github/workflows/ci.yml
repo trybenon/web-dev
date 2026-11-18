@@ -10,6 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  deploy-checks:
+    name: deploy checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate deployment script
+        run: |
+          bash -n scripts/deploy.sh
+          shellcheck scripts/deploy.sh
+          python3 -m unittest discover -s scripts -p 'test_deploy.py' -v
+      - name: Validate production Compose
+        env:
+          APP_IMAGE: ghcr.io/trybenon/web-dev:test
+        run: docker compose -f deploy/compose.yml config --quiet
+
   checks:
     name: ${{ matrix.script }}
     runs-on: ubuntu-latest
@@ -22,7 +38,6 @@ jobs:
           - lint
           - test
           - coverage
-          - build
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -71,3 +86,34 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  release-image:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_RELEASE: ${{ github.sha }}
+      BUGSINK_DSN: https://public@bugsink.invalid/1
+      APP_BUILD_STAGE: release-build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - name: Build application and source maps through Compose
+        run: docker compose build app
+      - name: Start the application through Compose
+        run: docker compose up --detach --no-build --wait --wait-timeout 90 app
+      - name: Check the production entrypoint
+        run: docker compose exec -T app node scripts/healthcheck.mjs
+      - name: Stop containers
+        if: always()
+        run: docker compose down --remove-orphans
+
+  deploy:
+    name: Deploy main
+    needs: [checks, e2e, deploy-checks, release-image]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit

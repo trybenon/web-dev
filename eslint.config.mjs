@@ -13,6 +13,7 @@ export default defineConfig([
     "**/test-results/**",
     "docs/**",
     "spikes/**",
+    ".release/**",
   ]),
   {
     files: ["**/*.{js,mjs,cjs,ts,mts,vue}"],

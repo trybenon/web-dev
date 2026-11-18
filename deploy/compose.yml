@@ -1,0 +1,32 @@
+name: watch-together
+
+services:
+  app:
+    image: ${APP_IMAGE:?Set APP_IMAGE to an image tagged with a full commit SHA}
+    container_name: watch-together-web
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: ./app.env
+        required: false
+      - path: ./monitoring.env
+        required: false
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:18080:3000"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "node", "/app/scripts/healthcheck.mjs"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+
+networks:
+  app:
+    external: true
+    name: watch-together-net

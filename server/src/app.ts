@@ -22,10 +22,12 @@ export function createAppServer(indexFile: URL = defaultIndexFile) {
     const useHtmlFallback =
       wantsHtml && !reservedPath && extname(pathname) === "";
     if (request.method === "GET" && pathname === "/api/health") {
-      const body: HealthResponse = { status: "ok" };
+      const sha = process.env.APP_RELEASE;
+      const body: HealthResponse = { status: "ok", ...(sha ? { sha } : {}) };
 
       response.writeHead(200, {
         "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
       });
       response.end(JSON.stringify(body));
       return;

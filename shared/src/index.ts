@@ -1,5 +1,6 @@
 export interface HealthResponse {
   status: "ok";
+  sha?: string;
 }
 
 export * from "./monitoring.js";

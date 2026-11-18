@@ -13,6 +13,29 @@ function errorAt(platform: string, frame: StackFrame): ErrorEvent {
 }
 
 describe("sanitizeErrorEvent", () => {
+  it("сохраняет серверный debug ID, не возвращая переменные и строки кода в событие", () => {
+    const filename = "/app/server/dist/rate-limit.js";
+    const debugId = "7331421a-f09b-5c25-8791-a248c6c1c58e";
+    const event = sanitizeErrorEvent({
+      ...errorAt("node", {
+        filename,
+        lineno: 8,
+        colno: 10,
+        in_app: true,
+        context_line: "private runtime context",
+        vars: { token: "private-token" },
+      }),
+      release: "a".repeat(40),
+      debug_meta: {
+        images: [{ type: "sourcemap", code_file: filename, debug_id: debugId }],
+      },
+    });
+    expect(event?.debug_meta?.images).toEqual([
+      { type: "sourcemap", code_file: filename, debug_id: debugId },
+    ]);
+    expect(JSON.stringify(event)).not.toContain("private");
+  });
+
   it("убирает пользовательские данные и сохраняет место ошибки, версию и debug ID", () => {
     const url = "https://app.example/assets/index-test.js";
     const debugId = "b6804fde-acfc-5b5d-bdc8-956ac063d402";
