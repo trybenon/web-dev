@@ -18,9 +18,8 @@ function updateVolume(value: number | number[]): void {
 }
 
 function commitVolume(value: number | number[]): void {
-  if(typeof value==="number") emit("volumeCommit", value);
+  if (typeof value === "number") emit("volumeCommit", value);
 }
-
 </script>
 
 <template>

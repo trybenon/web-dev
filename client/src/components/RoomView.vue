@@ -417,10 +417,10 @@ async function copyInvite() {
               type="button"
               @click="toggleFullScreen"
               class="room-view-fullscreen"
-              :aria-labal="
+              :aria-label="
                 isFullScreen
-                  ? 'Войти в полноэкранный режим'
-                  : 'Свернуть полноэкраный режим'
+                  ? 'Свернуть полноэкраный режим'
+                  : 'Войти в полноэкранный режим'
               "
               @mousedown.prevent
             >

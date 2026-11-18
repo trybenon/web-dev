@@ -177,8 +177,8 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
-/*засунул сюда тк там какието проблемы с готовыми компонентами потом мб перенесю*/
-.room-settings-volume-slider .el-slider__runway::before {
+
+.room-settings-volume-slider [class~="el-slider__runway"]::before {
   position: absolute;
   inset: -15px 0;
   content: "";
