@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
+import { captureException } from "@sentry/vue";
 import type { PlayerBridge, RoomView } from "../sync";
 import RoomSettings from "./RoomSettings.vue";
 import {
@@ -26,6 +27,7 @@ const emit = defineEmits<{ leave: [] }>();
 const props = defineProps<{ room: RoomView | null }>();
 
 const demoUrl = "/media/demo.webm";
+const demoLoadFailed = ref(false);
 const settingsOpen = ref(false);
 const roomStore = useRoomStore();
 const video = useTemplateRef<HTMLVideoElement>("video");
@@ -36,18 +38,31 @@ function updateFullScreenState() {
   isFullScreen.value = document.fullscreenElement == videoScreen.value;
 }
 
-async function toggleFullScreen() {
-  if (!videoScreen.value) {
+async function toggleFullScreen(): Promise<void> {
+  const screen = videoScreen.value;
+  if (!screen) return;
+
+  const exiting = document.fullscreenElement === screen;
+
+  if (!exiting && !document.fullscreenEnabled) {
+    ElMessage.warning("Полноэкранный режим недоступен");
     return;
   }
+
   try {
-    if (document.fullscreenElement === videoScreen.value) {
+    if (exiting) {
       await document.exitFullscreen();
     } else {
-      await videoScreen.value.requestFullscreen();
+      await screen.requestFullscreen();
     }
   } catch (error) {
-    console.log("Неудалось открыть полноэкранный режим", error);
+    captureException(error);
+    ElMessage.error({
+      message: exiting
+        ? "Не удалось выйти из полноэкранного режима"
+        : "Не удалось открыть полноэкранный режим",
+      appendTo: document.fullscreenElement === screen ? screen : document.body,
+    });
   }
 }
 
@@ -197,6 +212,16 @@ function updateTimeline(): void {
   currentSeconds.value = element.currentTime;
 }
 
+function handleDemoError(): void {
+  const mediaError = video.value?.error;
+  if (!mediaError || mediaError.code === mediaError.MEDIA_ERR_ABORTED) {
+    return;
+  }
+
+  demoLoadFailed.value = true;
+  captureException(new Error("Не удалось загрузить демо-видео"));
+}
+
 function previewSeek(event: Event): void {
   seekPreview.value = (event.currentTarget as HTMLInputElement).valueAsNumber;
 }
@@ -207,21 +232,27 @@ function commitSeek(event: Event): void {
   roomStore.seek(Math.round(seconds * 1000));
 }
 
-let seekPointer: { id: number; slider: HTMLInputElement } | undefined;
+const seekPointer = ref<{ id: number; slider: HTMLInputElement }>();
 
 function startSeekPointer(event: PointerEvent): void {
   const slider = event.currentTarget;
   if (event.button !== 0 || !(slider instanceof HTMLInputElement)) return;
 
-  seekPointer = { id: event.pointerId, slider };
+  seekPointer.value = { id: event.pointerId, slider };
 }
 
 function releaseSeekFocus(event: PointerEvent): void {
-  if (seekPointer?.id !== event.pointerId) return;
+  const pointer = seekPointer.value;
+  if (!pointer || pointer.id !== event.pointerId) return;
 
-  const { slider } = seekPointer;
-  seekPointer = undefined;
-  window.requestAnimationFrame(() => slider.blur());
+  seekPointer.value = undefined;
+  pointer.slider.blur();
+  videoScreen.value?.blur();
+  showControls();
+}
+
+function releaseScreenClickFocus(event: MouseEvent): void {
+  if (event.detail > 0) videoScreen.value?.blur();
 }
 
 function togglePlayback(): void {
@@ -355,7 +386,11 @@ async function copyInvite() {
         aria-label="Видеоплеер"
         ref="videoScreen"
         @mousemove="showControls"
-        :class="{ 'room-view-screen-controls-visible': areControlsVisible }"
+        @click="releaseScreenClickFocus"
+        :class="{
+          'room-view-screen-controls-visible':
+            areControlsVisible || seekPointer !== undefined,
+        }"
       >
         <video
           ref="video"
@@ -367,6 +402,8 @@ async function copyInvite() {
           @timeupdate="updateTimeline"
           @seeked="updateTimeline"
           @dblclick="handleVideoDoubleClick"
+          @error="handleDemoError"
+          @loadeddata="demoLoadFailed = false"
         />
 
         <p
@@ -453,6 +490,10 @@ async function copyInvite() {
             </button>
           </div>
         </div>
+
+        <p v-if="demoLoadFailed" class="room-view-playback-notice" role="alert">
+          Не удалось загрузить демо-видео
+        </p>
 
         <p
           v-if="playbackNotice"

@@ -175,7 +175,7 @@ code {
   font-size: 15px;
   line-height: 135%;
   padding: 4px 8px;
-  background: var(--code-bg);
+  background: var(--surface);
 }
 
 .room-settings-volume-slider [class~="el-slider__runway"]::before {
